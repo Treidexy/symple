@@ -1,5 +1,8 @@
-#[derive(Debug)]
+use crate::compiler::{ FileId };
+
+#[derive(Debug, Clone)]
 pub struct Span {
+	pub file_id: FileId,
 	pub start: usize,
 	pub end: usize,
 }
@@ -19,9 +22,10 @@ impl TokenFlags {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum TokenKind {
 	Unknown,
+	Eof,
 
 	Identifier(String),
 	Int(i64),
@@ -41,14 +45,16 @@ pub struct Token {
 }
 
 pub struct Lexer {
+	file_id: FileId,
 	src: String,
 	idx: usize,
 	flags: TokenFlags,
 }
 
 impl Lexer {
-	pub fn lex(src: String) -> Vec<Token> {
+	pub fn lex(file_id: FileId, src: String) -> Vec<Token> {
 		let mut lexer = Lexer {
+			file_id,
 			src,
 			idx: 0,
 			flags: TokenFlags::new(),
@@ -59,6 +65,8 @@ impl Lexer {
 			lexer.skip_whitespace();
 			tokens.push(lexer.lex_token());
 		}
+
+		tokens.push(lexer.lex_token());
 
 		tokens
 	}
@@ -86,6 +94,9 @@ impl Lexer {
 			b'%' => {
 				self.make_little_token(TokenKind::Percent)
 			},
+			b'\0' => {
+				self.make_little_token(TokenKind::Eof)
+			},
 			_ => {
 				if self.peek(0).is_ascii_digit() {
 					self.lex_number()
@@ -106,7 +117,7 @@ impl Lexer {
 		}
 
 		let end = self.idx;
-		let span = Span { start, end };
+		let span = Span { file_id: self.file_id, start, end };
 		let number = self.src[start..end].parse::<i64>().unwrap();
 		self.make_token(TokenKind::Int(number), span)
 	}
@@ -119,7 +130,7 @@ impl Lexer {
 		}
 
 		let end = self.idx;
-		let span = Span { start, end };
+		let span = Span { file_id: self.file_id, start, end };
 		let identifier = self.src[start..end].to_owned();
 		self.make_token(TokenKind::Identifier(identifier), span)
 	}
@@ -164,6 +175,7 @@ impl Lexer {
 	// makes a token of len 1
 	fn make_little_token(&mut self, kind: TokenKind) -> Token {
 		let span = Span {
+			file_id: self.file_id,
 			start: self.idx,
 			end: self.idx + 1,
 		};
