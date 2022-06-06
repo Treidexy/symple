@@ -26,9 +26,11 @@ pub enum TokenKind {
 	Identifier(String),
 	Int(i64),
 
-	Equal,
-
-	Semicolon,
+	Plus,
+	Minus,
+	Star,
+	Slash,
+	Percent,
 }
 
 #[derive(Debug)]
@@ -44,52 +46,59 @@ pub struct Lexer {
 	flags: TokenFlags,
 }
 
-impl Lexer{
-	pub fn new(src: String) -> Self {
-		let mut flags = TokenFlags::new();
-		flags.first_of_line = true;
-
-		Self {
+impl Lexer {
+	pub fn lex(src: String) -> Vec<Token> {
+		let mut lexer = Lexer {
 			src,
 			idx: 0,
-			flags,
+			flags: TokenFlags::new(),
+		};
+
+		let mut tokens = vec![];
+		while !lexer.at_eof() {
+			lexer.skip_whitespace();
+			tokens.push(lexer.lex_token());
+		}
+
+		tokens
+	}
+
+	fn skip_whitespace(&mut self) {
+		while !self.at_eof() && self.peek(0).is_ascii_whitespace() {
+			self.next();
 		}
 	}
 
-	pub fn lex(&mut self, tokens: &mut Vec<Token>) {
-		while !self.at_eof() {
-			if self.peek(0).is_ascii_whitespace() {
-				self.next();
-				continue;
-			}
-
-			match self.peek(0) {
-				b'=' => {
-					tokens.push(self.make_little_token(TokenKind::Equal));
-				},
-				b';' => {
-					tokens.push(self.make_little_token(TokenKind::Semicolon));
-				},
-				_ => {
-
-					if self.peek(0).is_ascii_digit() {
-						self.lex_number(tokens);
-						continue;
-					}
-		
-					if self.peek(0).is_ascii_alphabetic() {
-						self.lex_identifier(tokens);
-						continue;
-					}
-		
-					tokens.push(self.make_little_token(TokenKind::Unknown));
-					continue;
-				},
-			}
+	fn lex_token(&mut self) -> Token {
+		match self.peek(0) {
+			b'+' => {
+				self.make_little_token(TokenKind::Plus)
+			},
+			b'-' => {
+				self.make_little_token(TokenKind::Minus)
+			},
+			b'*' => {
+				self.make_little_token(TokenKind::Star)
+			},
+			b'/' => {
+				self.make_little_token(TokenKind::Slash)
+			},
+			b'%' => {
+				self.make_little_token(TokenKind::Percent)
+			},
+			_ => {
+				if self.peek(0).is_ascii_digit() {
+					self.lex_number()
+				} else if self.peek(0).is_ascii_alphabetic() {
+					self.lex_identifier()
+				} else {
+					self.make_little_token(TokenKind::Unknown)
+				}
+			},
 		}
 	}
 
-	fn lex_number(&mut self, tokens: &mut Vec<Token>) {
+	fn lex_number(&mut self) -> Token {
 		let start = self.idx;
 
 		while !self.at_eof() && self.peek(0).is_ascii_digit() {
@@ -99,10 +108,10 @@ impl Lexer{
 		let end = self.idx;
 		let span = Span { start, end };
 		let number = self.src[start..end].parse::<i64>().unwrap();
-		tokens.push(self.make_token(TokenKind::Int(number), span));
+		self.make_token(TokenKind::Int(number), span)
 	}
 
-	fn lex_identifier(&mut self, tokens: &mut Vec<Token>) {
+	fn lex_identifier(&mut self) -> Token {
 		let start = self.idx;
 
 		while !self.at_eof() && self.peek(0).is_ascii_alphanumeric() {
@@ -112,7 +121,7 @@ impl Lexer{
 		let end = self.idx;
 		let span = Span { start, end };
 		let identifier = self.src[start..end].to_owned();
-		tokens.push(self.make_token(TokenKind::Identifier(identifier), span));
+		self.make_token(TokenKind::Identifier(identifier), span)
 	}
 
 	fn at_eof(&self) -> bool {

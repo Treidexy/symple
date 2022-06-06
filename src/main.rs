@@ -1,11 +1,10 @@
-mod lexer;
+mod lex;
 
-use lexer::{ Lexer };
+use lex::{ Lexer, };
 
 fn main() {
-    let mut lexer = Lexer::new("let x = 1;".to_owned());
-    let mut tokens = vec![];
-    lexer.lex(&mut tokens);
+    let src = std::fs::read_to_string("samples/test.sy").unwrap();
+    let tokens = Lexer::lex(src.clone());
     for token in tokens {
         println!("{:?}", token);
     }
