@@ -1,8 +1,13 @@
-use crate::lex::{ Token, TokenKind, Span, };
-use crate::compiler::{ FileId };
+use crate::lex::{ Token, TokenKind, };
+use crate::compiler::{ FileId, Span, };
 
 #[derive(Debug)]
-pub enum BinOp {
+pub struct ModuleST {
+	pub exprs: Vec<ExprST>,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum BinOpST {
 	Add,
 	Sub,
 	Mul,
@@ -11,25 +16,25 @@ pub enum BinOp {
 }
 
 #[derive(Debug)]
-pub enum ExprKind {
-	BinOp(BinOp, Box<Expr>, Box<Expr>),
+pub enum ExprSTKind {
+	BinOp(BinOpST, Box<ExprST>, Box<ExprST>),
 	Int(i64),
 }
 
 #[derive(Debug)]
-pub struct Expr {
-	pub kind: ExprKind,
+pub struct ExprST {
+	pub kind: ExprSTKind,
 	pub span: Span,
 }
 
-pub struct Parser {
+pub struct Parser<'a> {
 	file_id: FileId,
-	tokens: Vec<Token>,
+	tokens: &'a Vec<Token>,
 	idx: usize,
 }
 
-impl Parser {
-	pub fn parse(file_id: FileId, tokens: Vec<Token>) -> Vec<Expr> {
+impl<'a> Parser<'a> {
+	pub fn parse(file_id: FileId, tokens: &Vec<Token>) -> ModuleST {
 		let mut parser = Parser {
 			file_id,
 			tokens,
@@ -41,15 +46,15 @@ impl Parser {
 			exprs.push(parser.parse_expr());
 		}
 
-		exprs
+		ModuleST { exprs }
 	}
 
-	fn parse_expr(&mut self) -> Expr {
+	fn parse_expr(&mut self) -> ExprST {
 		self.parse_bin_expr(0)
 	}
 
-	fn parse_bin_expr(&mut self, parent_precedence: u8) -> Expr {
-		let mut left = self.parse_primary_expr();
+	fn parse_bin_expr(&mut self, parent_precedence: u8) -> ExprST {
+		let mut left = self.parse_unary_expr();
 
 		while !self.at_eof() {
 			let op_token = self.peek(0);
@@ -67,8 +72,8 @@ impl Parser {
 				start: left.span.start,
 				end: right.span.end,
 			};
-			left = Expr {
-				kind: ExprKind::BinOp(op, Box::new(left), Box::new(right)),
+			left = ExprST {
+				kind: ExprSTKind::BinOp(op, Box::new(left), Box::new(right)),
 				span: span,
 			};
 		}
@@ -76,11 +81,15 @@ impl Parser {
 		left
 	}
 
-	fn parse_primary_expr(&mut self) -> Expr {
+	fn parse_unary_expr(&mut self) -> ExprST {
+		self.parse_primary_expr()
+	}
+
+	fn parse_primary_expr(&mut self) -> ExprST {
 		let token = self.next();
 		match token.kind {
-			TokenKind::Int(i) => Expr {
-				kind: ExprKind::Int(i),
+			TokenKind::Int(i) => ExprST {
+				kind: ExprSTKind::Int(i),
 				span: token.span.clone(),
 			},
 			_ => panic!(),
@@ -91,6 +100,7 @@ impl Parser {
 		self.idx >= self.tokens.len() - 1
 	}
 
+	#[allow(dead_code)]
 	fn expect(&mut self, kind: TokenKind) -> &Token {
 		if self.peek(0).kind != kind {
 			panic!();
@@ -126,13 +136,13 @@ impl TokenKind {
 		}
 	}
 
-	pub fn to_bin_op(&self) -> BinOp {
+	pub fn to_bin_op(&self) -> BinOpST {
 		match self {
-			TokenKind::Plus => BinOp::Add,
-			TokenKind::Minus => BinOp::Sub,
-			TokenKind::Star => BinOp::Mul,
-			TokenKind::Slash => BinOp::Div,
-			TokenKind::Percent => BinOp::Mod,
+			TokenKind::Plus => BinOpST::Add,
+			TokenKind::Minus => BinOpST::Sub,
+			TokenKind::Star => BinOpST::Mul,
+			TokenKind::Slash => BinOpST::Div,
+			TokenKind::Percent => BinOpST::Mod,
 			_ => panic!("bad match"),
 		}
 	}

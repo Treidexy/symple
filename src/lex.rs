@@ -1,11 +1,4 @@
-use crate::compiler::{ FileId };
-
-#[derive(Debug, Clone)]
-pub struct Span {
-	pub file_id: FileId,
-	pub start: usize,
-	pub end: usize,
-}
+use crate::compiler::{ FileId, Span };
 
 #[derive(Debug, Copy, Clone)]
 pub struct TokenFlags {
@@ -44,15 +37,15 @@ pub struct Token {
 	pub span: Span,
 }
 
-pub struct Lexer {
+pub struct Lexer<'a> {
 	file_id: FileId,
-	src: String,
+	src: &'a String,
 	idx: usize,
 	flags: TokenFlags,
 }
 
-impl Lexer {
-	pub fn lex(file_id: FileId, src: String) -> Vec<Token> {
+impl<'a> Lexer<'a> {
+	pub fn lex(file_id: FileId, src: &String) -> Vec<Token> {
 		let mut lexer = Lexer {
 			file_id,
 			src,
