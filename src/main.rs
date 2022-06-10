@@ -41,8 +41,7 @@ fn main() {
     unsafe {
         let ctx = LLVMContextCreate();
         let irmodule = LLVMModuleCreateWithName("test".as_ptr() as *const i8);
-        let mut emitter = Emitter::new(ctx, irmodule);
-        emitter.emit_module(&module);
+        Emitter::emit(ctx, irmodule, &module);
         let cstr = LLVMPrintModuleToString(irmodule);
         let cstr1 = std::ffi::CStr::from_ptr(cstr).to_owned();
         let _str = cstr1.to_str().unwrap();

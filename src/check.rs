@@ -5,8 +5,9 @@ pub type TypeId = usize;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum BuiltinType {
-	Int(usize),
-	UInt(usize),
+	Int(u32),
+	UInt(u32),
+	Float(u32),
 }
 
 #[derive(Debug, Eq, PartialEq)]
