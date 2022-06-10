@@ -1,5 +1,5 @@
-use crate::compiler::{ Span };
-use crate::parse::{ ModuleST, StmtST, ExprST, ExprSTKind, BinOpST };
+use crate::compiler::*;
+use crate::parse::*;
 
 pub type TypeId = usize;
 
@@ -18,7 +18,7 @@ pub enum Type {
 #[derive(Debug)]
 pub struct Module {
 	pub types: Vec<Type>,
-	pub stmts: Vec<Stmt>,
+	pub funcs: Vec<Func>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -44,7 +44,6 @@ pub enum ExprKind {
 	Float(f64),
 }
 
-
 #[derive(Debug)]
 pub struct Expr {
 	pub kind: ExprKind,
@@ -53,8 +52,16 @@ pub struct Expr {
 }
 
 #[derive(Debug)]
+pub struct Func {
+	pub name: String,
+	pub stmts: Vec<Stmt>,
+	pub span: Span,
+}
+
+#[derive(Debug)]
 pub enum Stmt {
 	Expr(Expr),
+	Func(Func),
 }
 
 pub struct Checker {
@@ -66,16 +73,30 @@ impl Checker {
 		let mut checker = Checker {
 			module: Module {
 				types: vec![],
-				stmts: vec![],
+				funcs: vec![],
 			},
 		};
 
-		// for stmt_st in &module_st.stmts {
-		// 	let checked = checker.check_stmt(stmt_st);
-		// 	checker.module.stmts.push(checked);
-		// }
+		for func_st in &module_st.funcs {
+			let checked = checker.check_func(func_st);
+			checker.module.funcs.push(checked);
+		}
 
 		checker.module
+	}
+
+	fn check_func(&mut self, ast: &FuncST) -> Func {
+		let mut stmts = vec![];
+		for stmt_st in &ast.stmts {
+			let checked = self.check_stmt(stmt_st);
+			stmts.push(checked);
+		}
+
+		Func {
+			name: ast.name.clone(),
+			stmts,
+			span: ast.span,
+		}
 	}
 
 	fn check_stmt(&mut self, ast: &StmtST) -> Stmt {

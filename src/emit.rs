@@ -4,7 +4,9 @@
  * DO NOT TRY THIS AT HOME!!!
 */
 
-use crate::check::{ Module, Stmt, Expr, BinOp, Type, TypeId, BuiltinType, ExprKind, };
+use std::ptr::null;
+
+use crate::check::*;
 use llvm_sys::prelude::*;
 use llvm_sys::{ LLVMTypeKind, LLVMTypeKind::*, };
 use llvm_sys::core::*;
@@ -40,28 +42,47 @@ impl<'a> Emitter<'a> {
 			let irty = emitter.emit_type(ty);
 			emitter.types.push(irty);
 		}
-
-		let fnty = LLVMFunctionType(LLVMVoidType(), std::ptr::null_mut(), 0, 0);
-		let fn_main = LLVMAddFunction(emitter.irmodule, cstr("main"), fnty);
-		let entry = LLVMAppendBasicBlockInContext(emitter.ctx, fn_main, cstr("entry"));
-		LLVMPositionBuilderAtEnd(emitter.builder, entry);
-
-		for stmt in &module.stmts {
-			let Stmt::Expr(expr) = stmt;
-			let val = emitter.emit_expr(expr);
-			let ty = LLVMTypeOf(val);
-			let ptr = LLVMBuildAlloca(emitter.builder, ty, cstr("val"));
-			LLVMBuildStore(emitter.builder, val, ptr);
+		
+		for func in &module.funcs {
+			emitter.emit_func(func);
 		}
 	}
 
-	unsafe fn emit_expr(&mut self, expr: &Expr) -> LLVMValueRef {
-		match expr.kind {
+	unsafe fn emit_func(&mut self, ast: &Func) -> LLVMValueRef {
+		let retty = LLVMVoidTypeInContext(self.ctx);
+		let functy = LLVMFunctionType(retty, std::ptr::null_mut(), 0, 0);
+		let name = cstr(ast.name.as_str());
+		let func = LLVMAddFunction(self.irmodule, name, functy);
+		let entry = LLVMAppendBasicBlockInContext(self.ctx, func, cstr("entry"));
+		LLVMPositionBuilderAtEnd(self.builder, entry);
+
+		for stmt in &ast.stmts {
+			self.emit_stmt(stmt);
+		}
+
+		func
+	}
+	
+	unsafe fn emit_stmt(&mut self, ast: &Stmt) -> LLVMValueRef {
+		match ast {
+			Stmt::Expr(expr) => {
+				let val = self.emit_expr(expr);
+				let ty = LLVMTypeOf(val);
+				let ptr = LLVMBuildAlloca(self.builder, ty, cstr("val"));
+				LLVMBuildStore(self.builder, val, ptr);
+				val
+			},
+			Stmt::Func(func) => self.emit_func(func),
+		}
+	}
+
+	unsafe fn emit_expr(&mut self, ast: &Expr) -> LLVMValueRef {
+		match ast.kind {
 			ExprKind::BinOp(op, ref leftt, ref rightt) => {
 				let left = self.emit_expr(leftt);
 				let right = self.emit_expr(rightt);
-				let left = self.emit_cast(left, leftt.type_id, expr.type_id);
-				let right = self.emit_cast(right, rightt.type_id, expr.type_id);
+				let left = self.emit_cast(left, leftt.type_id, ast.type_id);
+				let right = self.emit_cast(right, rightt.type_id, ast.type_id);
 				
 				match op {
 					BinOp::Add => LLVMBuildAdd(self.builder, left, right, cstr("add")),

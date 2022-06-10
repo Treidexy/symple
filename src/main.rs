@@ -33,11 +33,11 @@ fn main() {
     println!("");
 
     let module = Checker::check(&module_st);
-    // for stmt in &module.stmts {
-    //     println!("{:?}", stmt);
-    // }
+    for func in &module.funcs {
+        println!("{:?}", func);
+    }
 
-    // println!("\n");
+    println!("\n");
 
     unsafe {
         let ctx = LLVMContextCreate();
@@ -47,5 +47,6 @@ fn main() {
         let cstr1 = std::ffi::CStr::from_ptr(cstr).to_owned();
         let _str = cstr1.to_str().unwrap();
         println!("{}", _str);
+        LLVMDisposeMessage(cstr);
     }
 }

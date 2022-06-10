@@ -5,3 +5,7 @@ funcFunc() {
 
 	6 + 9
 }
+
+anotherFunc() {
+	80085 * 6.927
+}
