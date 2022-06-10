@@ -1,5 +1,5 @@
 use crate::compiler::{ Span };
-use crate::parse::{ ModuleST, ExprST, ExprSTKind, BinOpST };
+use crate::parse::{ ModuleST, StmtST, ExprST, ExprSTKind, BinOpST };
 
 pub type TypeId = usize;
 
@@ -18,7 +18,7 @@ pub enum Type {
 #[derive(Debug)]
 pub struct Module {
 	pub types: Vec<Type>,
-	pub exprs: Vec<Expr>,
+	pub stmts: Vec<Stmt>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -41,6 +41,7 @@ pub enum BinOp {
 pub enum ExprKind {
 	BinOp(BinOp, Box<Expr>, Box<Expr>),
 	Int(i64),
+	Float(f64),
 }
 
 
@@ -49,6 +50,11 @@ pub struct Expr {
 	pub kind: ExprKind,
 	pub type_id: TypeId,
 	pub span: Span,
+}
+
+#[derive(Debug)]
+pub enum Stmt {
+	Expr(Expr),
 }
 
 pub struct Checker {
@@ -60,16 +66,25 @@ impl Checker {
 		let mut checker = Checker {
 			module: Module {
 				types: vec![],
-				exprs: vec![],
+				stmts: vec![],
 			},
 		};
 
-		for expr_st in &module_st.exprs {
-			let checked = checker.check_expr(expr_st);
-			checker.module.exprs.push(checked);
+		for stmt_st in &module_st.stmts {
+			let checked = checker.check_stmt(stmt_st);
+			checker.module.stmts.push(checked);
 		}
 
 		checker.module
+	}
+
+	fn check_stmt(&mut self, ast: &StmtST) -> Stmt {
+		match ast {
+			StmtST::Expr(expr_st) => {
+				let checked = self.check_expr(expr_st);
+				Stmt::Expr(checked)
+			}
+		}
 	}
 
 	fn check_expr(&mut self, ast: &ExprST) -> Expr {
@@ -78,8 +93,8 @@ impl Checker {
 				let left = self.check_expr(left);
 				let right = self.check_expr(right);
 				let span = ast.span;
-				let op = op.to_bin_op();
 				let type_id = self.resolve_bin_op_type(op, left.type_id, right.type_id);
+				let op = self.bin_op_st_to_bin_op(op, type_id);
 
 				Expr {
 					kind: ExprKind::BinOp(op, Box::new(left), Box::new(right)),
@@ -98,11 +113,53 @@ impl Checker {
 					span,
 				}
 			},
+			ExprSTKind::Float(value) => {
+				let span = ast.span;
+				let _type = Type::Builtin(BuiltinType::Float(64));
+				let type_id = self.module.find_or_add_type(_type);
+
+				Expr {
+					kind: ExprKind::Float(value),
+					type_id,
+					span,
+				}
+			},
 		}
 	}
 
-	fn resolve_bin_op_type(&mut self, _op: BinOp, left: TypeId, _right: TypeId) -> TypeId {
-		left
+	fn resolve_bin_op_type(&mut self, _op: BinOpST, left_id: TypeId, right_id: TypeId) -> TypeId {
+		let left = &self.module.types[left_id];
+		let right = &self.module.types[right_id];
+
+		if left.is_float() {
+			left_id
+		} else if right.is_float() {
+			right_id
+		} else {
+			left_id
+		}
+	}
+
+	fn bin_op_st_to_bin_op(&self, op: BinOpST, type_id: TypeId) -> BinOp {
+		let ty = &self.module.types[type_id];
+		
+		if ty.is_float() {
+			match op {
+				BinOpST::Add => BinOp::FAdd,
+				BinOpST::Sub => BinOp::FSub,
+				BinOpST::Mul => BinOp::FMul,
+				BinOpST::Div => BinOp::FDiv,
+				BinOpST::Mod => BinOp::FMod,
+			}
+		} else {
+			match op {
+				BinOpST::Add => BinOp::Add,
+				BinOpST::Sub => BinOp::Sub,
+				BinOpST::Mul => BinOp::Mul,
+				BinOpST::Div => if ty.is_signed_int() { BinOp::SDiv } else { BinOp::UDiv },
+				BinOpST::Mod => if ty.is_signed_int() { BinOp::SMod } else { BinOp::UMod },
+			}
+		}
 	}
 }
 
@@ -120,14 +177,26 @@ impl Module {
 	}
 }
 
-impl BinOpST {
-	pub fn to_bin_op(&self) -> BinOp {
+impl Type {
+	pub fn is_signed_int(&self) -> bool {
 		match self {
-			BinOpST::Add => BinOp::Add,
-			BinOpST::Sub => BinOp::Sub,
-			BinOpST::Mul => BinOp::Mul,
-			BinOpST::Div => BinOp::SDiv,
-			BinOpST::Mod => BinOp::SMod,
+			Type::Builtin(BuiltinType::Int(_)) => true,
+			_ => false,
+		}
+	}
+
+	pub fn is_int(&self) -> bool {
+		match self {
+			Type::Builtin(BuiltinType::Int(_)) => true,
+			Type::Builtin(BuiltinType::UInt(_)) => true,
+			_ => false,
+		}
+	}
+
+	pub fn is_float(&self) -> bool {
+		match self {
+			Type::Builtin(BuiltinType::Float(_)) => true,
+			_ => false,
 		}
 	}
 }

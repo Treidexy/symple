@@ -4,9 +4,9 @@
  * DO NOT TRY THIS AT HOME!!!
 */
 
-use crate::check::{ Module, Expr, BinOp, Type, TypeId, BuiltinType, ExprKind, };
+use crate::check::{ Module, Stmt, Expr, BinOp, Type, TypeId, BuiltinType, ExprKind, };
 use llvm_sys::prelude::*;
-use llvm_sys::{ LLVMTypeKind::*, };
+use llvm_sys::{ LLVMTypeKind, LLVMTypeKind::*, };
 use llvm_sys::core::*;
 
 unsafe fn cstr(s: & str) -> *const i8 {
@@ -46,7 +46,8 @@ impl<'a> Emitter<'a> {
 		let entry = LLVMAppendBasicBlockInContext(emitter.ctx, fn_main, cstr("entry"));
 		LLVMPositionBuilderAtEnd(emitter.builder, entry);
 
-		for expr in &module.exprs {
+		for stmt in &module.stmts {
+			let Stmt::Expr(expr) = stmt;
 			let val = emitter.emit_expr(expr);
 			let ptr = LLVMBuildAlloca(emitter.builder, LLVMInt64TypeInContext(emitter.ctx), cstr("val"));
 			LLVMBuildStore(emitter.builder, val, ptr);
@@ -77,9 +78,13 @@ impl<'a> Emitter<'a> {
 				}
 			},
 			ExprKind::Int(value) => {
-				let irty = LLVMIntTypeInContext(self.ctx, 64);
+				let irty = LLVMInt64TypeInContext(self.ctx);
 				LLVMConstInt(irty, value as u64, 0)
-			}
+			},
+			ExprKind::Float(value) => {
+				let irty = LLVMDoubleTypeInContext(self.ctx);
+				LLVMConstReal(irty, value)
+			},
 		}
 	}
 
@@ -93,25 +98,32 @@ impl<'a> Emitter<'a> {
 		panic!("Type not found: {}", type_id);
 	}
 
+	unsafe fn float_type(&self, nbits: u32) -> LLVMTypeRef {
+		if nbits <= 16 {
+			LLVMHalfTypeInContext(self.ctx)
+		} else if nbits <= 32 {
+			LLVMFloatTypeInContext(self.ctx)
+		} else if nbits <= 64 {
+			LLVMDoubleTypeInContext(self.ctx)
+		} else {
+			LLVMFP128TypeInContext(self.ctx)
+		}
+	}
+
 	unsafe fn emit_type(&mut self, ty: &Type) -> LLVMTypeRef {
 		match ty {
 			Type::Builtin(builtin_ty) =>
 				match builtin_ty {
 					BuiltinType::Int(x) => LLVMIntTypeInContext(self.ctx, *x),
 					BuiltinType::UInt(x) => LLVMIntTypeInContext(self.ctx, *x),
-					BuiltinType::Float(x) => match *x {
-						16 => LLVMHalfTypeInContext(self.ctx),
-						32 => LLVMFloatTypeInContext(self.ctx),
-						64 => LLVMDoubleTypeInContext(self.ctx),
-						128 => LLVMFP128TypeInContext(self.ctx),
-						_ => panic!("bad code"),
-					}
+					BuiltinType::Float(x) => self.float_type(*x),
 				},
 		}
 	}
 
 	unsafe fn emit_cast(&mut self, val: LLVMValueRef, from_id: TypeId, to_id: TypeId) -> LLVMValueRef {
 		let from = LLVMTypeOf(val);
+		debug_assert_eq!(from, self.find_type(from_id), "bad code");
 		let from_kind = LLVMGetTypeKind(from);
 		let to = self.find_type(to_id);
 		let to_kind = LLVMGetTypeKind(to);
@@ -121,9 +133,9 @@ impl<'a> Emitter<'a> {
 
 		if from_kind == LLVMIntegerTypeKind && to_kind == LLVMIntegerTypeKind {
 			LLVMBuildIntCast(self.builder, val, to, cstr("cast"))
-		} else if from_kind == LLVMFloatTypeKind && to_kind == LLVMFloatTypeKind {
+		} else if type_kind_is_float(from_kind) && type_kind_is_float(to_kind) {
 			LLVMBuildFPCast(self.builder, val, to, cstr("cast"))
-		} else if from_kind == LLVMIntegerTypeKind && to_kind == LLVMFloatTypeKind {
+		} else if from_kind == LLVMIntegerTypeKind && type_kind_is_float(to_kind) {
 			match from_ty {
 				Type::Builtin(BuiltinType::Int(_)) => {
 					LLVMBuildSIToFP(self.builder, val, to, cstr("cast"))
@@ -131,9 +143,9 @@ impl<'a> Emitter<'a> {
 				Type::Builtin(BuiltinType::UInt(_)) => {
 					LLVMBuildUIToFP(self.builder, val, to, cstr("cast"))
 				},
-				_ => panic!("bad code"),
+				_ => panic!("bad code of {:?}", from_ty),
 			}
-		}  else if from_kind == LLVMFloatTypeKind && to_kind == LLVMIntegerTypeKind {
+		}  else if type_kind_is_float(from_kind) && to_kind == LLVMIntegerTypeKind {
 			match to_ty {
 				Type::Builtin(BuiltinType::Int(_)) => {
 					LLVMBuildFPToSI(self.builder, val, to, cstr("cast"))
@@ -141,10 +153,17 @@ impl<'a> Emitter<'a> {
 				Type::Builtin(BuiltinType::UInt(_)) => {
 					LLVMBuildFPToUI(self.builder, val, to, cstr("cast"))
 				},
-				_ => panic!("bad code"),
+				_ => panic!("bad code of {:?}", to_ty),
 			}
 		} else {
-			panic!("bad cast");
+			panic!("bad cast of {:?} to {:?}", from_kind, to_kind);
 		}
+	}
+}
+
+fn type_kind_is_float(kind: LLVMTypeKind) -> bool {
+	match kind {
+		LLVMHalfTypeKind | LLVMFloatTypeKind | LLVMDoubleTypeKind | LLVMFP128TypeKind => true,
+		_ => false,
 	}
 }

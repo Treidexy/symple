@@ -10,10 +10,11 @@ use check::{ Checker, };
 use emit::{ Emitter, };
 use compiler::{ FileId, };
 
-use llvm_sys::prelude::*;
 use llvm_sys::core::*;
 
 fn main() {
+    std::env::set_var("RUST_BACKTRACE", "full");
+
     let file_id: FileId = 0;
     let src = std::fs::read_to_string("samples/test.sy").unwrap();
 
@@ -25,18 +26,18 @@ fn main() {
     println!("");
 
     let module_st = Parser::parse(file_id, &tokens);
-    for expr in &module_st.exprs {
-        println!("{:?}", expr);
-    }
+    // for stmt in &module_st.stmts {
+    //     println!("{:?}", stmt);
+    // }
 
-    println!("");
+    // println!("");
 
     let module = Checker::check(&module_st);
-    for expr in &module.exprs {
-        println!("{:?}", expr);
-    }
+    // for stmt in &module.stmts {
+    //     println!("{:?}", stmt);
+    // }
 
-    println!("\n");
+    // println!("\n");
 
     unsafe {
         let ctx = LLVMContextCreate();

@@ -3,7 +3,7 @@ use crate::compiler::{ FileId, Span, };
 
 #[derive(Debug)]
 pub struct ModuleST {
-	pub exprs: Vec<ExprST>,
+	pub stmts: Vec<StmtST>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -19,12 +19,18 @@ pub enum BinOpST {
 pub enum ExprSTKind {
 	BinOp(BinOpST, Box<ExprST>, Box<ExprST>),
 	Int(i64),
+	Float(f64),
 }
 
 #[derive(Debug)]
 pub struct ExprST {
 	pub kind: ExprSTKind,
 	pub span: Span,
+}
+
+#[derive(Debug)]
+pub enum StmtST {
+	Expr(ExprST),
 }
 
 pub struct Parser<'a> {
@@ -41,12 +47,17 @@ impl<'a> Parser<'a> {
 			idx: 0,
 		};
 
-		let mut exprs = vec![]; 
+		let mut stmts = vec![]; 
 		while !parser.at_eof() {
-			exprs.push(parser.parse_expr());
+			stmts.push(parser.parse_stmt());
 		}
 
-		ModuleST { exprs }
+		ModuleST { stmts }
+	}
+
+	fn parse_stmt(&mut self) -> StmtST {
+		let expr = self.parse_expr();
+		StmtST::Expr(expr)
 	}
 
 	fn parse_expr(&mut self) -> ExprST {
@@ -90,6 +101,10 @@ impl<'a> Parser<'a> {
 		match token.kind {
 			TokenKind::Int(i) => ExprST {
 				kind: ExprSTKind::Int(i),
+				span: token.span.clone(),
+			},
+			TokenKind::Float(x) => ExprST {
+				kind: ExprSTKind::Float(x),
 				span: token.span.clone(),
 			},
 			_ => panic!(),

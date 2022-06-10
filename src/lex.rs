@@ -22,6 +22,7 @@ pub enum TokenKind {
 
 	Identifier(String),
 	Int(i64),
+	Float(f64),
 
 	Plus,
 	Minus,
@@ -105,14 +106,31 @@ impl<'a> Lexer<'a> {
 	fn lex_number(&mut self) -> Token {
 		let start = self.idx;
 
+		if self.peek(0) == b'-' {
+			self.next();
+		}
+
 		while !self.at_eof() && self.peek(0).is_ascii_digit() {
 			self.next();
 		}
 
-		let end = self.idx;
-		let span = Span { file_id: self.file_id, start, end };
-		let number = self.src[start..end].parse::<i64>().unwrap();
-		self.make_token(TokenKind::Int(number), span)
+		if self.peek(0) == b'.' {
+			self.next();
+
+			while !self.at_eof() && self.peek(0).is_ascii_digit() {
+				self.next();
+			}
+
+			let end = self.idx;
+			let span = Span { file_id: self.file_id, start, end };
+			let number = self.src[start..end].parse::<f64>().unwrap();
+			self.make_token(TokenKind::Float(number), span)
+		} else {
+			let end = self.idx;
+			let span = Span { file_id: self.file_id, start, end };
+			let number = self.src[start..end].parse::<i64>().unwrap();
+			self.make_token(TokenKind::Int(number), span)
+		}
 	}
 
 	fn lex_identifier(&mut self) -> Token {
