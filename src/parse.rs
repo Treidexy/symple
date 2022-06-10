@@ -3,7 +3,7 @@ use crate::compiler::{ FileId, Span, };
 
 #[derive(Debug)]
 pub struct ModuleST {
-	pub stmts: Vec<StmtST>,
+	pub funcs: Vec<FuncST>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -13,6 +13,17 @@ pub enum BinOpST {
 	Mul,
 	Div,
 	Mod,
+}
+
+#[derive(Debug)]
+pub enum TypeSTKind {
+	Name(String),
+}
+
+#[derive(Debug)]
+pub struct TypeST {
+	pub kind: TypeSTKind,
+	pub span: Span,
 }
 
 #[derive(Debug)]
@@ -29,8 +40,16 @@ pub struct ExprST {
 }
 
 #[derive(Debug)]
+pub struct FuncST {
+	pub name: String,
+	pub stmts: Vec<StmtST>,
+	pub span: Span,
+}
+
+#[derive(Debug)]
 pub enum StmtST {
 	Expr(ExprST),
+	Func(FuncST),
 }
 
 pub struct Parser<'a> {
@@ -47,12 +66,41 @@ impl<'a> Parser<'a> {
 			idx: 0,
 		};
 
-		let mut stmts = vec![]; 
+		let mut funcs = vec![]; 
 		while !parser.at_eof() {
-			stmts.push(parser.parse_stmt());
+			funcs.push(parser.parse_func());
 		}
 
-		ModuleST { stmts }
+		ModuleST { funcs }
+	}
+
+	fn parse_func(&mut self) -> FuncST {
+		let name_span;
+		let name;
+		{
+			let name_token = self.expect_identifier();
+			name_span = name_token.span;
+			name = if let TokenKind::Identifier(name) = &name_token.kind { name } else { todo!() }.to_string();
+		}
+		
+		self.expect(TokenKind::LParen);
+		self.expect(TokenKind::RParen);
+		self.expect(TokenKind::LBrace);
+		
+		let mut stmts = vec![];
+		while !self.at_eof() && self.peek(0).kind != TokenKind::RBrace {
+			stmts.push(self.parse_stmt());
+		}
+
+		let rbrace_span = self.next().span;
+
+		let span = Span {
+			file_id: self.file_id,
+			start: name_span.start,
+			end: rbrace_span.end,
+		};
+		
+		FuncST { name, stmts, span, }
 	}
 
 	fn parse_stmt(&mut self) -> StmtST {
@@ -115,7 +163,15 @@ impl<'a> Parser<'a> {
 		self.idx >= self.tokens.len() - 1
 	}
 
-	#[allow(dead_code)]
+	fn expect_identifier(&mut self) -> &Token {
+		let kind = &self.peek(0).kind;
+		if let TokenKind::Identifier(_) = kind {
+			self.next()
+		} else {
+			panic!()
+		}
+	}
+
 	fn expect(&mut self, kind: TokenKind) -> &Token {
 		if self.peek(0).kind != kind {
 			panic!();

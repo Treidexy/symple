@@ -70,10 +70,10 @@ impl Checker {
 			},
 		};
 
-		for stmt_st in &module_st.stmts {
-			let checked = checker.check_stmt(stmt_st);
-			checker.module.stmts.push(checked);
-		}
+		// for stmt_st in &module_st.stmts {
+		// 	let checked = checker.check_stmt(stmt_st);
+		// 	checker.module.stmts.push(checked);
+		// }
 
 		checker.module
 	}
@@ -83,7 +83,8 @@ impl Checker {
 			StmtST::Expr(expr_st) => {
 				let checked = self.check_expr(expr_st);
 				Stmt::Expr(checked)
-			}
+			},
+			_ => todo!(),
 		}
 	}
 

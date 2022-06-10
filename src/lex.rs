@@ -29,6 +29,11 @@ pub enum TokenKind {
 	Star,
 	Slash,
 	Percent,
+
+	LParen,
+	RParen,
+	LBrace,
+	RBrace,
 }
 
 #[derive(Debug)]
@@ -90,6 +95,18 @@ impl<'a> Lexer<'a> {
 			},
 			b'\0' => {
 				self.make_little_token(TokenKind::Eof)
+			},
+			b'(' => {
+				self.make_little_token(TokenKind::LParen)
+			},
+			b')' => {
+				self.make_little_token(TokenKind::RParen)
+			},
+			b'{' => {
+				self.make_little_token(TokenKind::LBrace)
+			},
+			b'}' => {
+				self.make_little_token(TokenKind::RBrace)
 			},
 			_ => {
 				if self.peek(0).is_ascii_digit() {

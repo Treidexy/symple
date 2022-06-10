@@ -49,7 +49,8 @@ impl<'a> Emitter<'a> {
 		for stmt in &module.stmts {
 			let Stmt::Expr(expr) = stmt;
 			let val = emitter.emit_expr(expr);
-			let ptr = LLVMBuildAlloca(emitter.builder, LLVMInt64TypeInContext(emitter.ctx), cstr("val"));
+			let ty = LLVMTypeOf(val);
+			let ptr = LLVMBuildAlloca(emitter.builder, ty, cstr("val"));
 			LLVMBuildStore(emitter.builder, val, ptr);
 		}
 	}

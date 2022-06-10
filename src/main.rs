@@ -26,11 +26,11 @@ fn main() {
     println!("");
 
     let module_st = Parser::parse(file_id, &tokens);
-    // for stmt in &module_st.stmts {
-    //     println!("{:?}", stmt);
-    // }
+    for func in &module_st.funcs {
+        println!("{:?}", func);
+    }
 
-    // println!("");
+    println!("");
 
     let module = Checker::check(&module_st);
     // for stmt in &module.stmts {
