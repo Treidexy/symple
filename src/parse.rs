@@ -58,7 +58,7 @@ pub struct Parser<'a> {
 	tokens: &'a Vec<Token>,
 	idx: usize,
 
-	pub errors: Vec<ParseError<'a>>,
+	errors: Vec<Error>,
 }
 
 impl<'a> Parser<'a> {
@@ -79,12 +79,7 @@ impl<'a> Parser<'a> {
 		if parser.errors.is_empty() {
 			Ok(ModuleST { funcs })
 		} else {
-			let mut errors = vec![];
-			for err in &parser.errors {
-				errors.push(err.to_error());
-			}
-
-			Err(errors)
+			Err(parser.errors)
 		}
 	}
 
@@ -120,6 +115,7 @@ impl<'a> Parser<'a> {
 
 	fn parse_stmt(&mut self) -> StmtST {
 		let expr = self.parse_expr();
+		self.expect(&TokenKind::Semicolon);
 		StmtST::Expr(expr)
 	}
 
@@ -188,15 +184,15 @@ impl<'a> Parser<'a> {
 	}
 
 	fn report_wrong_token(&mut self, expected: &'static TokenKind, actual: &'a Token) {
-		self.errors.push(ParseError::WrongToken(expected, actual));
+		self.errors.push(Error(format!("expected {}, found {}", expected, actual.kind), actual.span));
 	}
 
 	fn report_expected_identifier(&mut self, token: &'a Token) {
-		self.errors.push(ParseError::ExpectedIdentifier(token));
+		self.errors.push(Error(format!("expected identifier, found {}", token.kind), token.span));
 	}
 
 	fn report_expected_expr(&mut self, token: &'a Token) -> ExprST {
-		self.errors.push(ParseError::ExpectedExpr(token));
+		self.errors.push(Error(format!("expected expression, found {}", token.kind), token.span));
 		ExprST {
 			kind: ExprSTKind::Error,
 			span: token.span,
@@ -238,22 +234,6 @@ impl TokenKind {
 			TokenKind::Slash => BinOpST::Div,
 			TokenKind::Percent => BinOpST::Mod,
 			_ => unreachable!(),
-		}
-	}
-}
-
-impl<'a> ParseError<'a> {
-	pub fn to_error(&self) -> Error {
-		match *self {
-			ParseError::WrongToken(expected, actual) => {
-				Error(format!("expected {:?}, got {:?}", expected, actual.kind), actual.span)
-			},
-			ParseError::ExpectedIdentifier(token) => {
-				Error(format!("expected Identifier, got {:?}", token.kind), token.span)
-			},
-			ParseError::ExpectedExpr(token) => {
-				Error(format!("expected expression, got {:?}", token.kind), token.span)
-			},
 		}
 	}
 }

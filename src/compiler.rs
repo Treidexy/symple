@@ -10,13 +10,6 @@ pub struct Span {
 }
 
 #[derive(Debug)]
-pub enum ParseError<'a> {
-	WrongToken(&'static TokenKind, &'a Token),
-	ExpectedIdentifier(&'a Token),
-	ExpectedExpr(&'a Token),
-}
-
-#[derive(Debug)]
 pub struct Error(pub String, pub Span);
 
 impl Error {

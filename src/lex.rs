@@ -34,6 +34,8 @@ pub enum TokenKind {
 	RParen,
 	LBrace,
 	RBrace,
+
+	Semicolon,
 }
 
 #[derive(Debug)]
@@ -107,6 +109,9 @@ impl<'a> Lexer<'a> {
 			},
 			b'}' => {
 				self.make_little_token(TokenKind::RBrace)
+			},
+			b';' => {
+				self.make_little_token(TokenKind::Semicolon)
 			},
 			_ => {
 				if self.peek(0).is_ascii_digit() {
@@ -211,4 +216,32 @@ impl<'a> Lexer<'a> {
 		self.next();
 		self.make_token(kind, span)
 	}
+}
+
+impl TokenKind {
+	pub fn to_error_string(&self) -> String {
+		match *self {
+			TokenKind::Unknown => "unknown".to_owned(),
+			TokenKind::Plus => "`+`".to_owned(),
+			TokenKind::Minus => "`-`".to_owned(),
+			TokenKind::Star => "`*`".to_owned(),
+			TokenKind::Slash => "`/`".to_owned(),
+			TokenKind::Percent => "`%`".to_owned(),
+			TokenKind::Eof => "EOF".to_owned(),
+			TokenKind::LParen => "`(`".to_owned(),
+			TokenKind::RParen => "`)`".to_owned(),
+			TokenKind::LBrace => "`{`".to_owned(),
+			TokenKind::RBrace => "`}`".to_owned(),
+			TokenKind::Semicolon => "`;`".to_owned(),
+			TokenKind::Int(x) => format!("integer `{}`", x),
+			TokenKind::Float(x) => format!("float `{}`", x),
+			TokenKind::Identifier(ref s) => format!("identifier `{}`", s),
+		}
+	}
+}
+
+impl std::fmt::Display for TokenKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.write_str(self.to_error_string().as_str())
+    }
 }
