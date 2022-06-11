@@ -119,8 +119,9 @@ impl<'a> Parser<'a> {
 	fn parse_stmt(&mut self) -> StmtST {
 		let expr = self.parse_expr();
 		if self.peek(0).kind != TokenKind::RBrace {
-			self.expect(&TokenKind::Semicolon);
-			self.prev();
+			if self.expect(&TokenKind::Semicolon).is_none() {
+				self.prev();
+			}
 		}
 		StmtST::Expr(expr)
 	}

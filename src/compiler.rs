@@ -13,7 +13,7 @@ pub struct Error(pub String, pub Span);
 impl Error {
 	pub fn print<P: AsRef<std::path::Path> + std::fmt::Display>(&self, path: P, src: &String) {
 		let mut col = 0;
-		let mut line = 0;
+		let mut line = 1;
 		let mut line_start = 0;
 		let mut line_end = src.len();
 		let mut found = false;
