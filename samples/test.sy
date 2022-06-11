@@ -6,6 +6,6 @@ funcFunc() {
 	6 + 9
 }
 
-anotherFunc() {
+{ anotherFunc() {
 	80085 * 6.927
 }

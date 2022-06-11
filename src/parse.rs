@@ -1,5 +1,5 @@
 use crate::lex::{ Token, TokenKind, };
-use crate::compiler::{ FileId, Span, };
+use crate::compiler::*;
 
 #[derive(Debug)]
 pub struct ModuleST {
@@ -28,6 +28,7 @@ pub struct TypeST {
 
 #[derive(Debug)]
 pub enum ExprSTKind {
+	Error,
 	BinOp(BinOpST, Box<ExprST>, Box<ExprST>),
 	Int(i64),
 	Float(f64),
@@ -56,14 +57,18 @@ pub struct Parser<'a> {
 	file_id: FileId,
 	tokens: &'a Vec<Token>,
 	idx: usize,
+
+	pub errors: Vec<ParseError<'a>>,
 }
 
 impl<'a> Parser<'a> {
-	pub fn parse(file_id: FileId, tokens: &Vec<Token>) -> ModuleST {
+	pub fn parse(file_id: FileId, tokens: &Vec<Token>) -> Option<ModuleST> {
 		let mut parser = Parser {
 			file_id,
 			tokens,
 			idx: 0,
+
+			errors: vec![],
 		};
 
 		let mut funcs = vec![]; 
@@ -71,21 +76,29 @@ impl<'a> Parser<'a> {
 			funcs.push(parser.parse_func());
 		}
 
-		ModuleST { funcs }
+		if parser.errors.is_empty() {
+			Some(ModuleST { funcs })
+		} else {
+			for err in &parser.errors {
+				println!("{:?}", err);
+			}
+			None
+		}
 	}
 
 	fn parse_func(&mut self) -> FuncST {
-		let name_span;
-		let name;
-		{
-			let name_token = self.expect_identifier();
-			name_span = name_token.span;
-			name = if let TokenKind::Identifier(name) = &name_token.kind { name } else { todo!() }.to_string();
-		}
+		let name_token = self.next();
+		let name_span = name_token.span;
+		let name = if let TokenKind::Identifier(name) = &name_token.kind {
+			name.to_string()
+		} else {
+			self.report_expected_identifier(name_token);
+			String::new()
+		};
 		
-		self.expect(TokenKind::LParen);
-		self.expect(TokenKind::RParen);
-		self.expect(TokenKind::LBrace);
+		self.expect(&TokenKind::LParen);
+		self.expect(&TokenKind::RParen);
+		self.expect(&TokenKind::LBrace);
 		
 		let mut stmts = vec![];
 		while !self.at_eof() && self.peek(0).kind != TokenKind::RBrace {
@@ -155,7 +168,7 @@ impl<'a> Parser<'a> {
 				kind: ExprSTKind::Float(x),
 				span: token.span.clone(),
 			},
-			_ => panic!(),
+			_ => self.report_expected_expr(token),
 		}
 	}
 
@@ -163,29 +176,37 @@ impl<'a> Parser<'a> {
 		self.idx >= self.tokens.len() - 1
 	}
 
-	fn expect_identifier(&mut self) -> &Token {
-		let kind = &self.peek(0).kind;
-		if let TokenKind::Identifier(_) = kind {
-			self.next()
-		} else {
-			panic!()
+	fn expect(&mut self, kind: &'static TokenKind) -> &'a Token {
+		let token = self.next();
+		if token.kind != *kind {
+			self.report_wrong_token(kind, token);
+		}
+
+		token
+	}
+
+	fn report_wrong_token(&mut self, expected: &'static TokenKind, actual: &'a Token) {
+		self.errors.push(ParseError::WrongToken(expected, actual));
+	}
+
+	fn report_expected_identifier(&mut self, token: &'a Token) {
+		self.errors.push(ParseError::ExpectedIdentifier(token));
+	}
+
+	fn report_expected_expr(&mut self, token: &'a Token) -> ExprST {
+		self.errors.push(ParseError::ExpectedExpr(token));
+		ExprST {
+			kind: ExprSTKind::Error,
+			span: token.span,
 		}
 	}
 
-	fn expect(&mut self, kind: TokenKind) -> &Token {
-		if self.peek(0).kind != kind {
-			panic!();
-		}
-
-		self.next()
-	}
-
-	fn next(&mut self) -> &Token {
+	fn next(&mut self) -> &'a Token {
 		self.idx += 1;
 		self.peek(-1)
 	}
 
-	fn peek(&self, offset: isize) -> &Token {
+	fn peek(&self, offset: isize) -> &'a Token {
 		let pos = (self.idx as isize + offset) as usize;
 		if pos >= self.tokens.len() {
 			return &self.tokens[self.tokens.len() - 1];
@@ -214,7 +235,7 @@ impl TokenKind {
 			TokenKind::Star => BinOpST::Mul,
 			TokenKind::Slash => BinOpST::Div,
 			TokenKind::Percent => BinOpST::Mod,
-			_ => panic!("bad match"),
+			_ => unreachable!(),
 		}
 	}
 }

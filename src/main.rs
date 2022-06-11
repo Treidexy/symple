@@ -26,6 +26,7 @@ fn main() {
     println!("");
 
     let module_st = Parser::parse(file_id, &tokens);
+    let module_st = module_st.unwrap_or_else(|| { std::process::exit(1); });
     for func in &module_st.funcs {
         println!("{:?}", func);
     }

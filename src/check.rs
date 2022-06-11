@@ -111,6 +111,7 @@ impl Checker {
 
 	fn check_expr(&mut self, ast: &ExprST) -> Expr {
 		match ast.kind {
+			ExprSTKind::Error => unreachable!(),
 			ExprSTKind::BinOp(op, ref left, ref right) => {
 				let left = self.check_expr(left);
 				let right = self.check_expr(right);

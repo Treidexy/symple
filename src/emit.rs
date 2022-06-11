@@ -4,7 +4,7 @@
  * DO NOT TRY THIS AT HOME!!!
 */
 
-use std::ptr::null;
+use std::ptr::null_mut;
 
 use crate::check::*;
 use llvm_sys::prelude::*;
@@ -50,7 +50,7 @@ impl<'a> Emitter<'a> {
 
 	unsafe fn emit_func(&mut self, ast: &Func) -> LLVMValueRef {
 		let retty = LLVMVoidTypeInContext(self.ctx);
-		let functy = LLVMFunctionType(retty, std::ptr::null_mut(), 0, 0);
+		let functy = LLVMFunctionType(retty, null_mut(), 0, 0);
 		let name = cstr(ast.name.as_str());
 		let func = LLVMAddFunction(self.irmodule, name, functy);
 		let entry = LLVMAppendBasicBlockInContext(self.ctx, func, cstr("entry"));
