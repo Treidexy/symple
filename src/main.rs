@@ -16,7 +16,8 @@ fn main() {
     std::env::set_var("RUST_BACKTRACE", "full");
 
     let file_id: FileId = 0;
-    let src = std::fs::read_to_string("samples/test.sy").unwrap();
+    let path = "samples/test.sy";
+    let src = std::fs::read_to_string(path).unwrap();
 
     let tokens = Lexer::lex(file_id, &src);
     for token in &tokens {
@@ -29,7 +30,7 @@ fn main() {
     let module_st = if module_st.is_err() {
         let errors = module_st.err().unwrap();
         for error in &errors {
-            error.print(&src);
+            error.print(path, &src);
         }
         std::process::exit(1)
     } else {
