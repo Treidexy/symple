@@ -26,7 +26,15 @@ fn main() {
     println!("");
 
     let module_st = Parser::parse(file_id, &tokens);
-    let module_st = module_st.unwrap_or_else(|| { std::process::exit(1); });
+    let module_st = if module_st.is_err() {
+        let errors = module_st.err().unwrap();
+        for error in &errors {
+            error.print(&src);
+        }
+        std::process::exit(1)
+    } else {
+        module_st.unwrap()
+    };
     for func in &module_st.funcs {
         println!("{:?}", func);
     }

@@ -62,7 +62,7 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-	pub fn parse(file_id: FileId, tokens: &Vec<Token>) -> Option<ModuleST> {
+	pub fn parse(file_id: FileId, tokens: &Vec<Token>) -> Result<ModuleST, Vec<Error>> {
 		let mut parser = Parser {
 			file_id,
 			tokens,
@@ -77,12 +77,14 @@ impl<'a> Parser<'a> {
 		}
 
 		if parser.errors.is_empty() {
-			Some(ModuleST { funcs })
+			Ok(ModuleST { funcs })
 		} else {
+			let mut errors = vec![];
 			for err in &parser.errors {
-				println!("{:?}", err);
+				errors.push(err.to_error());
 			}
-			None
+
+			Err(errors)
 		}
 	}
 
@@ -236,6 +238,22 @@ impl TokenKind {
 			TokenKind::Slash => BinOpST::Div,
 			TokenKind::Percent => BinOpST::Mod,
 			_ => unreachable!(),
+		}
+	}
+}
+
+impl<'a> ParseError<'a> {
+	pub fn to_error(&self) -> Error {
+		match *self {
+			ParseError::WrongToken(expected, actual) => {
+				Error(format!("expected {:?}, got {:?}", expected, actual.kind), actual.span)
+			},
+			ParseError::ExpectedIdentifier(token) => {
+				Error(format!("expected Identifier, got {:?}", token.kind), token.span)
+			},
+			ParseError::ExpectedExpr(token) => {
+				Error(format!("expected expression, got {:?}", token.kind), token.span)
+			},
 		}
 	}
 }
