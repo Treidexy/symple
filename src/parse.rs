@@ -17,6 +17,8 @@ pub enum BinOpST {
 
 #[derive(Debug)]
 pub enum TypeSTKind {
+	Error,
+	None,
 	Name(String),
 }
 
@@ -42,6 +44,7 @@ pub struct ExprST {
 
 #[derive(Debug)]
 pub struct FuncST {
+	pub ty: TypeST,
 	pub name: String,
 	pub stmts: Vec<StmtST>,
 	pub span: Span,
@@ -49,6 +52,7 @@ pub struct FuncST {
 
 #[derive(Debug)]
 pub enum StmtST {
+	Error(Span),
 	Expr(ExprST),
 	Func(FuncST),
 }
@@ -86,15 +90,39 @@ impl<'a> Parser<'a> {
 		}
 	}
 
+	fn parse_type(&mut self) -> TypeST {
+		let span = self.peek(0).span;
+		let name_token = self.expect_identifier();
+		if name_token.is_none() {
+			return TypeST {
+				kind: TypeSTKind::Error,
+				span,
+			};
+		}
+
+		let name = name_token.unwrap().kind.text().unwrap();
+
+		TypeST { kind: TypeSTKind::Name(name.clone()), span }
+	}
+
 	fn parse_func(&mut self) -> Option<FuncST> {
-		let name_token = self.next();
-		let name_span = name_token.span;
-		let name = if let TokenKind::Identifier(name) = &name_token.kind {
-			name.to_string()
+		let ty = if matches!(self.peek(1).kind, TokenKind::Identifier(_)) {
+			self.parse_type()
 		} else {
-			self.report_expected_identifier(name_token);
-			String::new()
+			TypeST {
+				kind: TypeSTKind::None,
+				span: Span::new(self.file_id),
+			}
 		};
+
+		let name_token = self.expect_identifier();
+		if name_token.is_none() {
+			return None;
+		}
+
+		let name_token = name_token.unwrap();
+		let name_span = name_token.span;
+		let name = name_token.kind.text().unwrap();
 		
 		if self.expect(&TokenKind::LParen).is_none() { return None; }
 		if self.expect(&TokenKind::RParen).is_none() { return None; }
@@ -113,17 +141,30 @@ impl<'a> Parser<'a> {
 			end: rbrace_span.end,
 		};
 		
-		Some(FuncST { name, stmts, span, })
+		Some(FuncST { ty, name: name.clone(), stmts, span, })
 	}
 
 	fn parse_stmt(&mut self) -> StmtST {
-		let expr = self.parse_expr();
-		if self.peek(0).kind != TokenKind::RBrace {
-			if self.expect(&TokenKind::Semicolon).is_none() {
-				self.prev();
-			}
+		let token = self.peek(0);
+		match token {
+			Token { kind: TokenKind::Identifier(_), .. } => {
+				let func = self.parse_func();
+				if func.is_some() {
+					StmtST::Func(func.unwrap())
+				} else {
+					StmtST::Error(Span { file_id: self.file_id, start: token.span.start, end: self.peek(0).span.end, })
+				}
+			},
+			_ => {
+				let expr = self.parse_expr();
+				if self.peek(0).kind != TokenKind::RBrace {
+					if self.expect(&TokenKind::Semicolon).is_none() {
+						self.prev();
+					}
+				}
+				StmtST::Expr(expr)
+			},
 		}
-		StmtST::Expr(expr)
 	}
 
 	fn parse_expr(&mut self) -> ExprST {
@@ -177,8 +218,57 @@ impl<'a> Parser<'a> {
 		}
 	}
 
+	fn report_wrong_token(&mut self, expected: &[&'static TokenKind], actual: &'a Token) {
+		let expected_str = expected.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ");
+		self.errors.push(Error(format!("expected {}, found {}", expected_str, actual.kind), actual.span));
+	}
+
+	fn report_expected_identifier(&mut self, actual: &'a Token) {
+		self.errors.push(Error(format!("expected identifier, found {}", actual.kind), actual.span));
+	}
+
+	fn report_expected_identifier_or(&mut self, expected: &[&'static TokenKind], actual: &'a Token) {
+		let expected_str = expected.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ");
+		self.errors.push(Error(format!("expected identifier, {}, found {}", expected_str, actual.kind), actual.span));
+	}
+
+	fn report_expected_expr(&mut self, actual: &'a Token) -> ExprST {
+		self.errors.push(Error(format!("expected expression, found {}", actual.kind), actual.span));
+		ExprST {
+			kind: ExprSTKind::Error,
+			span: actual.span,
+		}
+	}
+
 	fn at_eof(&self) -> bool {
 		self.idx >= self.tokens.len() - 1
+	}
+
+	fn expect_identifier(&mut self) -> Option<&'a Token> {
+		let token = self.next();
+		if matches!(token, Token { kind: TokenKind::Identifier(_), .. }) {
+			Some(token)
+		} else {
+			self.report_expected_identifier(token);
+			None
+		}
+	}
+
+	fn expect_identifier_or(&mut self, kinds: &[&'static TokenKind]) -> Option<&'a Token> {
+		let token = self.next();
+		if matches!(token, Token { kind: TokenKind::Identifier(_), .. }) {
+			Some(token)
+		} else {
+			let token = self.next();
+			for kind in kinds {
+				if token.kind == **kind {
+					return Some(token);
+				}
+			}
+
+			self.report_expected_identifier_or(kinds, token);
+			None
+		}
 	}
 
 	fn expect(&mut self, kind: &'static TokenKind) -> Option<&'a Token> {
@@ -194,30 +284,13 @@ impl<'a> Parser<'a> {
 	fn expect_one_of(&mut self, kinds: &[&'static TokenKind]) -> Option<&'a Token> {
 		let token = self.next();
 		for kind in kinds {
-			if self.next().kind == **kind {
-				return Some(self.prev());
+			if token.kind == **kind {
+				return Some(token);
 			}
 		}
 
 		self.report_wrong_token(kinds, token);
 		None
-	}
-
-	fn report_wrong_token(&mut self, expected: &[&'static TokenKind], actual: &'a Token) {
-		let expected_str = expected.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ");
-		self.errors.push(Error(format!("expected {}, found {}", expected_str, actual.kind), actual.span));
-	}
-
-	fn report_expected_identifier(&mut self, token: &'a Token) {
-		self.errors.push(Error(format!("expected identifier, found {}", token.kind), token.span));
-	}
-
-	fn report_expected_expr(&mut self, token: &'a Token) -> ExprST {
-		self.errors.push(Error(format!("expected expression, found {}", token.kind), token.span));
-		ExprST {
-			kind: ExprSTKind::Error,
-			span: token.span,
-		}
 	}
 
 	fn prev(&mut self) -> &'a Token {
@@ -260,6 +333,13 @@ impl TokenKind {
 			TokenKind::Slash => BinOpST::Div,
 			TokenKind::Percent => BinOpST::Mod,
 			_ => unreachable!(),
+		}
+	}
+
+	fn text(&self) -> Option<&String> {
+		match self {
+			TokenKind::Identifier(name) => Some(name),
+			_ => None,
 		}
 	}
 }

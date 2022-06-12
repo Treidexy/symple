@@ -7,6 +7,12 @@ pub struct Span {
 	pub end: usize,
 }
 
+impl Span {
+	pub fn new(file_id: FileId) -> Self {
+		Self { file_id, start: 0, end: 0 }
+	}
+}
+
 #[derive(Debug)]
 pub struct Error(pub String, pub Span);
 

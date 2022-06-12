@@ -11,8 +11,15 @@ pub enum BuiltinType {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum Type {
+pub enum TypeKind {
+	None,
 	Builtin(BuiltinType),
+}
+
+#[derive(Debug)]
+pub struct Type {
+	pub kind: TypeKind,
+	pub span: Span,
 }
 
 #[derive(Debug)]
@@ -53,6 +60,7 @@ pub struct Expr {
 
 #[derive(Debug)]
 pub struct Func {
+	pub type_id: TypeId,
 	pub name: String,
 	pub stmts: Vec<Stmt>,
 	pub span: Span,
@@ -66,6 +74,8 @@ pub enum Stmt {
 
 pub struct Checker {
 	module: Module,
+
+	scope_name: String,
 }
 
 impl Checker {
@@ -75,6 +85,8 @@ impl Checker {
 				types: vec![],
 				funcs: vec![],
 			},
+
+			scope_name: String::new(),
 		};
 
 		for func_st in &module_st.funcs {
@@ -85,15 +97,52 @@ impl Checker {
 		checker.module
 	}
 
+	fn check_type(&mut self, ast: &TypeST) -> Type {
+		match ast.kind {
+			TypeSTKind::Name(ref name) => match name.as_str() {
+				"i32" => Type {
+					kind: TypeKind::Builtin(BuiltinType::Int(32)),
+					span: ast.span,
+				},
+				_ => todo!(),
+			},
+			TypeSTKind::None | TypeSTKind::Error => {
+				Type {
+					kind: TypeKind::None,
+					span: ast.span,
+				}
+			},
+		}
+	}
+
 	fn check_func(&mut self, ast: &FuncST) -> Func {
+		let added_dot = if !self.scope_name.is_empty() {
+			self.scope_name.push('.');
+			1
+		} else {
+			0
+		};
+
+		self.scope_name.push_str(&ast.name);
+
+		let ty = self.check_type(&ast.ty);
+		let type_id = self.module.find_or_add_type(ty);
+
+		// todo: better mangling
+		let mangled_name = self.scope_name.clone();
+
 		let mut stmts = vec![];
 		for stmt_st in &ast.stmts {
 			let checked = self.check_stmt(stmt_st);
 			stmts.push(checked);
 		}
 
+		self.scope_name.truncate(self.scope_name.len() - ast.name.len() - added_dot);
+
+
 		Func {
-			name: ast.name.clone(),
+			type_id,
+			name: mangled_name,
 			stmts,
 			span: ast.span,
 		}
@@ -104,6 +153,10 @@ impl Checker {
 			StmtST::Expr(expr_st) => {
 				let checked = self.check_expr(expr_st);
 				Stmt::Expr(checked)
+			},
+			StmtST::Func(func) => {
+				let checked = self.check_func(func);
+				Stmt::Func(checked)
 			},
 			_ => todo!(),
 		}
@@ -127,8 +180,8 @@ impl Checker {
 			},
 			ExprSTKind::Int(value) => {
 				let span = ast.span;
-				let _type = Type::Builtin(BuiltinType::Int(64));
-				let type_id = self.module.find_or_add_type(_type);
+				let ty = Type::new(TypeKind::Builtin(BuiltinType::Int(64)));
+				let type_id = self.module.find_or_add_type(ty);
 
 				Expr {
 					kind: ExprKind::Int(value),
@@ -138,8 +191,8 @@ impl Checker {
 			},
 			ExprSTKind::Float(value) => {
 				let span = ast.span;
-				let _type = Type::Builtin(BuiltinType::Float(64));
-				let type_id = self.module.find_or_add_type(_type);
+				let ty = Type::new(TypeKind::Builtin(BuiltinType::Float(64)));
+				let type_id = self.module.find_or_add_type(ty);
 
 				Expr {
 					kind: ExprKind::Float(value),
@@ -154,9 +207,9 @@ impl Checker {
 		let left = &self.module.types[left_id];
 		let right = &self.module.types[right_id];
 
-		if left.is_float() {
+		if left.kind.is_float() {
 			left_id
-		} else if right.is_float() {
+		} else if right.kind.is_float() {
 			right_id
 		} else {
 			left_id
@@ -166,7 +219,7 @@ impl Checker {
 	fn bin_op_st_to_bin_op(&self, op: BinOpST, type_id: TypeId) -> BinOp {
 		let ty = &self.module.types[type_id];
 		
-		if ty.is_float() {
+		if ty.kind.is_float() {
 			match op {
 				BinOpST::Add => BinOp::FAdd,
 				BinOpST::Sub => BinOp::FSub,
@@ -179,47 +232,56 @@ impl Checker {
 				BinOpST::Add => BinOp::Add,
 				BinOpST::Sub => BinOp::Sub,
 				BinOpST::Mul => BinOp::Mul,
-				BinOpST::Div => if ty.is_signed_int() { BinOp::SDiv } else { BinOp::UDiv },
-				BinOpST::Mod => if ty.is_signed_int() { BinOp::SMod } else { BinOp::UMod },
+				BinOpST::Div => if ty.kind.is_signed_int() { BinOp::SDiv } else { BinOp::UDiv },
+				BinOpST::Mod => if ty.kind.is_signed_int() { BinOp::SMod } else { BinOp::UMod },
 			}
 		}
 	}
 }
 
 impl Module {
-	fn find_or_add_type(&mut self, _type: Type) -> TypeId {
+	fn find_or_add_type(&mut self, ty: Type) -> TypeId {
 		for (i, t) in self.types.iter().enumerate() {
-			if *t == _type {
+			if t.kind == ty.kind {
 				return i;
 			}
 		}
 
 		let type_id = self.types.len();
-		self.types.push(_type);
+		self.types.push(ty);
 		type_id
 	}
 }
 
-impl Type {
+impl TypeKind {
 	pub fn is_signed_int(&self) -> bool {
 		match self {
-			Type::Builtin(BuiltinType::Int(_)) => true,
+			TypeKind::Builtin(BuiltinType::Int(_)) => true,
 			_ => false,
 		}
 	}
 
 	pub fn is_int(&self) -> bool {
 		match self {
-			Type::Builtin(BuiltinType::Int(_)) => true,
-			Type::Builtin(BuiltinType::UInt(_)) => true,
+			TypeKind::Builtin(BuiltinType::Int(_)) => true,
+			TypeKind::Builtin(BuiltinType::UInt(_)) => true,
 			_ => false,
 		}
 	}
 
 	pub fn is_float(&self) -> bool {
 		match self {
-			Type::Builtin(BuiltinType::Float(_)) => true,
+			TypeKind::Builtin(BuiltinType::Float(_)) => true,
 			_ => false,
+		}
+	}
+}
+
+impl Type {
+	pub fn new(kind: TypeKind) -> Type {
+		Type {
+			kind,
+			span: Span { file_id: 0, start: 0, end: 0, },
 		}
 	}
 }
