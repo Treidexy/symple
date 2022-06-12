@@ -53,6 +53,8 @@ impl<'a> Emitter<'a> {
 		let functy = LLVMFunctionType(retty, null_mut(), 0, 0);
 		let name = cstr(ast.name.as_str());
 		let func = LLVMAddFunction(self.irmodule, name, functy);
+		
+		let prev_block = LLVMGetInsertBlock(self.builder);
 		let entry = LLVMAppendBasicBlockInContext(self.ctx, func, cstr("entry"));
 		LLVMPositionBuilderAtEnd(self.builder, entry);
 
@@ -66,6 +68,8 @@ impl<'a> Emitter<'a> {
 		} else {
 			LLVMBuildRet(self.builder, last_stmt);
 		}
+
+		LLVMPositionBuilderAtEnd(self.builder, prev_block);
 
 		func
 	}
@@ -140,9 +144,9 @@ impl<'a> Emitter<'a> {
 	}
 
 	unsafe fn emit_type(&mut self, ty: &Type) -> LLVMTypeRef {
-		match &ty.kind {
-			TypeKind::None => LLVMVoidTypeInContext(self.ctx),
-			TypeKind::Builtin(builtin_ty) =>
+		match ty {
+			Type::None => LLVMVoidTypeInContext(self.ctx),
+			Type::Builtin(builtin_ty) =>
 				match builtin_ty {
 					BuiltinType::Int(x) => LLVMIntTypeInContext(self.ctx, *x),
 					BuiltinType::UInt(x) => LLVMIntTypeInContext(self.ctx, *x),
@@ -166,21 +170,21 @@ impl<'a> Emitter<'a> {
 		} else if type_kind_is_float(from_kind) && type_kind_is_float(to_kind) {
 			LLVMBuildFPCast(self.builder, val, to, cstr("cast"))
 		} else if from_kind == LLVMIntegerTypeKind && type_kind_is_float(to_kind) {
-			match from_ty.kind {
-				TypeKind::Builtin(BuiltinType::Int(_)) => {
+			match from_ty {
+				Type::Builtin(BuiltinType::Int(_)) => {
 					LLVMBuildSIToFP(self.builder, val, to, cstr("cast"))
 				},
-				TypeKind::Builtin(BuiltinType::UInt(_)) => {
+				Type::Builtin(BuiltinType::UInt(_)) => {
 					LLVMBuildUIToFP(self.builder, val, to, cstr("cast"))
 				},
 				_ => panic!("bad code of {:?}", from_ty),
 			}
 		}  else if type_kind_is_float(from_kind) && to_kind == LLVMIntegerTypeKind {
-			match to_ty.kind {
-				TypeKind::Builtin(BuiltinType::Int(_)) => {
+			match to_ty {
+				Type::Builtin(BuiltinType::Int(_)) => {
 					LLVMBuildFPToSI(self.builder, val, to, cstr("cast"))
 				},
-				TypeKind::Builtin(BuiltinType::UInt(_)) => {
+				Type::Builtin(BuiltinType::UInt(_)) => {
 					LLVMBuildFPToUI(self.builder, val, to, cstr("cast"))
 				},
 				_ => panic!("bad code of {:?}", to_ty),

@@ -11,15 +11,9 @@ pub enum BuiltinType {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum TypeKind {
+pub enum Type {
 	None,
 	Builtin(BuiltinType),
-}
-
-#[derive(Debug)]
-pub struct Type {
-	pub kind: TypeKind,
-	pub span: Span,
 }
 
 #[derive(Debug)]
@@ -100,17 +94,11 @@ impl Checker {
 	fn check_type(&mut self, ast: &TypeST) -> Type {
 		match ast.kind {
 			TypeSTKind::Name(ref name) => match name.as_str() {
-				"i32" => Type {
-					kind: TypeKind::Builtin(BuiltinType::Int(32)),
-					span: ast.span,
-				},
+				"i32" => Type::Builtin(BuiltinType::Int(32)),
 				_ => todo!(),
 			},
 			TypeSTKind::None | TypeSTKind::Error => {
-				Type {
-					kind: TypeKind::None,
-					span: ast.span,
-				}
+				Type::None
 			},
 		}
 	}
@@ -180,7 +168,7 @@ impl Checker {
 			},
 			ExprSTKind::Int(value) => {
 				let span = ast.span;
-				let ty = Type::new(TypeKind::Builtin(BuiltinType::Int(64)));
+				let ty = Type::Builtin(BuiltinType::Int(64));
 				let type_id = self.module.find_or_add_type(ty);
 
 				Expr {
@@ -191,7 +179,7 @@ impl Checker {
 			},
 			ExprSTKind::Float(value) => {
 				let span = ast.span;
-				let ty = Type::new(TypeKind::Builtin(BuiltinType::Float(64)));
+				let ty = Type::Builtin(BuiltinType::Float(64));
 				let type_id = self.module.find_or_add_type(ty);
 
 				Expr {
@@ -207,9 +195,9 @@ impl Checker {
 		let left = &self.module.types[left_id];
 		let right = &self.module.types[right_id];
 
-		if left.kind.is_float() {
+		if left.is_float() {
 			left_id
-		} else if right.kind.is_float() {
+		} else if right.is_float() {
 			right_id
 		} else {
 			left_id
@@ -219,7 +207,7 @@ impl Checker {
 	fn bin_op_st_to_bin_op(&self, op: BinOpST, type_id: TypeId) -> BinOp {
 		let ty = &self.module.types[type_id];
 		
-		if ty.kind.is_float() {
+		if ty.is_float() {
 			match op {
 				BinOpST::Add => BinOp::FAdd,
 				BinOpST::Sub => BinOp::FSub,
@@ -232,8 +220,8 @@ impl Checker {
 				BinOpST::Add => BinOp::Add,
 				BinOpST::Sub => BinOp::Sub,
 				BinOpST::Mul => BinOp::Mul,
-				BinOpST::Div => if ty.kind.is_signed_int() { BinOp::SDiv } else { BinOp::UDiv },
-				BinOpST::Mod => if ty.kind.is_signed_int() { BinOp::SMod } else { BinOp::UMod },
+				BinOpST::Div => if ty.is_signed_int() { BinOp::SDiv } else { BinOp::UDiv },
+				BinOpST::Mod => if ty.is_signed_int() { BinOp::SMod } else { BinOp::UMod },
 			}
 		}
 	}
@@ -242,7 +230,7 @@ impl Checker {
 impl Module {
 	fn find_or_add_type(&mut self, ty: Type) -> TypeId {
 		for (i, t) in self.types.iter().enumerate() {
-			if t.kind == ty.kind {
+			if t == &ty {
 				return i;
 			}
 		}
@@ -253,35 +241,26 @@ impl Module {
 	}
 }
 
-impl TypeKind {
+impl Type {
 	pub fn is_signed_int(&self) -> bool {
 		match self {
-			TypeKind::Builtin(BuiltinType::Int(_)) => true,
+			Type::Builtin(BuiltinType::Int(_)) => true,
 			_ => false,
 		}
 	}
 
 	pub fn is_int(&self) -> bool {
 		match self {
-			TypeKind::Builtin(BuiltinType::Int(_)) => true,
-			TypeKind::Builtin(BuiltinType::UInt(_)) => true,
+			Type::Builtin(BuiltinType::Int(_)) => true,
+			Type::Builtin(BuiltinType::UInt(_)) => true,
 			_ => false,
 		}
 	}
 
 	pub fn is_float(&self) -> bool {
 		match self {
-			TypeKind::Builtin(BuiltinType::Float(_)) => true,
+			Type::Builtin(BuiltinType::Float(_)) => true,
 			_ => false,
-		}
-	}
-}
-
-impl Type {
-	pub fn new(kind: TypeKind) -> Type {
-		Type {
-			kind,
-			span: Span { file_id: 0, start: 0, end: 0, },
 		}
 	}
 }
