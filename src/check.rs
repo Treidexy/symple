@@ -69,6 +69,7 @@ pub enum Stmt {
 pub struct Checker {
 	module: Module,
 
+	// hax for name mangling
 	scope_name: String,
 }
 

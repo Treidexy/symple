@@ -1,23 +1,12 @@
-i32 funcFunc() {
-	6 + 0.9 * 420;
-
-	17 * 4.20;
-
+i32 funcFunc()  {
 	innerFunc() {
-		1.32 + 24;
-
-		7 * 24 + 4;
-
 		funcception() {
-			1.32 + 24;
-
-			7 * 24 + 4;
 		}
 	}
 
 	6 + 9
 }
 
-anotherFunc() {
+i32 anotherFunc() {
 	80085 * 6.927
 }

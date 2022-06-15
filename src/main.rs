@@ -12,51 +12,54 @@ use compiler::{ FileId, };
 
 use llvm_sys::core::*;
 
+const DEBUG: bool = true;
+
 fn main() {
-    std::env::set_var("RUST_BACKTRACE", "full");
+	std::env::set_var("RUST_BACKTRACE", "full");
 
-    let file_id: FileId = 0;
-    let path = "samples/test.sy";
-    let src = std::fs::read_to_string(path).unwrap();
+	let file_id: FileId = 0;
+	let path = "samples/test.sy";
+	let src = std::fs::read_to_string(path).unwrap();
 
-    let tokens = Lexer::lex(file_id, &src);
-    for token in &tokens {
-        println!("{:?}", token);
-    }
+	let tokens = Lexer::lex(file_id, &src);
+	for token in &tokens {
+		// println!("{:?}", token);
+	}
 
-    println!("");
+	// println!("");
 
-    let module_st = Parser::parse(file_id, &tokens);
-    let module_st = if module_st.is_err() {
-        let errors = module_st.err().unwrap();
-        for error in &errors {
-            error.print(path, &src);
-        }
-        std::process::exit(1)
-    } else {
-        module_st.unwrap()
-    };
-    for func in &module_st.funcs {
-        println!("{:?}", func);
-    }
+	let parse_result = Parser::parse(file_id, &tokens);
+	for message in &parse_result.messages {
+		message.print(path, &src)
+	}
+	if parse_result.has_error || (!DEBUG && parse_result.has_mistake)  {
+		std::process::exit(1);
+	}
 
-    println!("");
+	let module_st = parse_result.module;
+	for func in &module_st.funcs {
+		// println!("{:?}", func);
+	}
 
-    let module = Checker::check(&module_st);
-    for func in &module.funcs {
-        println!("{:?}", func);
-    }
+	// println!("");
 
-    println!("\n");
+	let module = Checker::check(&module_st);
+	for func in &module.funcs {
+		// println!("{:?}", func);
+	}
 
-    unsafe {
-        let ctx = LLVMContextCreate();
-        let irmodule = LLVMModuleCreateWithName("test".as_ptr() as *const i8);
-        Emitter::emit(ctx, irmodule, &module);
-        let cstr = LLVMPrintModuleToString(irmodule);
-        let cstr1 = std::ffi::CStr::from_ptr(cstr).to_owned();
-        let _str = cstr1.to_str().unwrap();
-        println!("{}", _str);
-        LLVMDisposeMessage(cstr);
-    }
+	// println!("\n");
+
+	unsafe {
+		let ctx = LLVMContextCreate();
+		let irmodule = LLVMModuleCreateWithName("test".as_ptr() as *const i8);
+		Emitter::emit(ctx, irmodule, &module);
+		let cstr = LLVMPrintModuleToString(irmodule);
+		let cstr1 = std::ffi::CStr::from_ptr(cstr).to_owned();
+		let _str = cstr1.to_str().unwrap();
+		// println!("{}", _str);
+		LLVMDisposeMessage(cstr);
+	}
+
+	println!("\n\u{001b}[32mcompiled successfully\u{001b}[0m");
 }

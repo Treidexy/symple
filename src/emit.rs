@@ -4,7 +4,7 @@
  * DO NOT TRY THIS AT HOME!!!
 */
 
-use std::ptr::{null_mut, null};
+use std::ptr::{ null_mut };
 
 use crate::check::*;
 use llvm_sys::prelude::*;

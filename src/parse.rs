@@ -62,17 +62,30 @@ pub struct Parser<'a> {
 	tokens: &'a Vec<Token>,
 	idx: usize,
 
-	errors: Vec<Error>,
+	messages: Vec<Message>,
+	has_error: bool,
+	has_mistake: bool,
+
+	// mistake helping
+}
+
+pub struct ParseResult {
+	pub module: ModuleST,
+	pub messages: Vec<Message>,
+	pub has_error: bool,
+	pub has_mistake: bool,
 }
 
 impl<'a> Parser<'a> {
-	pub fn parse(file_id: FileId, tokens: &Vec<Token>) -> Result<ModuleST, Vec<Error>> {
+	pub fn parse(file_id: FileId, tokens: &Vec<Token>) -> ParseResult {
 		let mut parser = Parser {
 			file_id,
 			tokens,
 			idx: 0,
 
-			errors: vec![],
+			messages: vec![],
+			has_error: false,
+			has_mistake: false,
 		};
 
 		let mut funcs = vec![]; 
@@ -80,27 +93,33 @@ impl<'a> Parser<'a> {
 			let func = parser.parse_func();
 			if func.is_some() {
 				funcs.push(func.unwrap());
+			} else {
+				parser.next();
 			}
 		}
 
-		if parser.errors.is_empty() {
-			Ok(ModuleST { funcs })
-		} else {
-			Err(parser.errors)
+		ParseResult {
+			module: ModuleST { funcs },
+			messages: parser.messages,
+			has_error: parser.has_error,
+			has_mistake: parser.has_mistake,
 		}
 	}
 
 	fn parse_type(&mut self) -> TypeST {
 		let span = self.peek(0).span;
-		let name_token = self.expect_identifier();
-		if name_token.is_none() {
+		let name_token = self.peek(0);
+		if !matches!(name_token.kind, TokenKind::Identifier(_)) {
+			self.report_error(format!("expected identifier for type name"), span);
 			return TypeST {
 				kind: TypeSTKind::Error,
 				span,
 			};
+		} else {
+			self.next();
 		}
 
-		let name = name_token.unwrap().kind.text().unwrap();
+		let name = name_token.kind.text().unwrap();
 
 		TypeST { kind: TypeSTKind::Name(name.clone()), span }
 	}
@@ -115,18 +134,41 @@ impl<'a> Parser<'a> {
 			}
 		};
 
-		let name_token = self.expect_identifier();
-		if name_token.is_none() {
+		let name_token = self.peek(0);
+		if !matches!(name_token.kind, TokenKind::Identifier(_)) {
+			self.report_error( format!("expected identifier for function name"), name_token.span);
 			return None;
+		} else {
+			self.next();
 		}
 
-		let name_token = name_token.unwrap();
 		let name_span = name_token.span;
 		let name = name_token.kind.text().unwrap();
 		
-		if self.expect(&TokenKind::LParen).is_none() { return None; }
-		if self.expect(&TokenKind::RParen).is_none() { return None; }
-		if self.expect(&TokenKind::LBrace).is_none() { return None; }
+		if self.peek(0).kind != TokenKind::LParen {
+			self.report_error( format!("expected `(` for function arguments"), self.peek(-1).span.gap(self.peek(0).span));
+			return None;
+		} else {
+			self.next();
+		}
+
+		if self.peek(0).kind != TokenKind::RParen {
+			if self.peek(0).kind == TokenKind::LBrace {
+				println!("{}, {}, {}", self.peek(-1).kind, self.peek(0).kind, self.peek(1).kind);
+				self.report_mistake(format!("expected `)` to close function arguments"), format!("adding them for you"), self.peek(-1).span.gap(self.peek(0).span));
+				self.next();
+			} else {
+				self.report_error( format!("expected `)` to close function arguments"), self.peek(-1).span.gap(self.peek(0).span));
+				return None;
+			}
+		} else {
+			self.next();
+			if self.peek(0).kind != TokenKind::LBrace {
+				self.report_error(format!("expected `{{` to open function"), self.peek(-1).span.gap(self.peek(0).span));
+			} else {
+				self.next();
+			}
+		}
 		
 		let mut stmts = vec![];
 		while !self.at_eof() && self.peek(0).kind != TokenKind::RBrace {
@@ -158,10 +200,13 @@ impl<'a> Parser<'a> {
 			_ => {
 				let expr = self.parse_expr();
 				if self.peek(0).kind != TokenKind::RBrace {
-					if self.expect(&TokenKind::Semicolon).is_none() {
-						self.prev();
+					if self.peek(0).kind != TokenKind::Semicolon {
+						self.report_mistake(format!("expected `;`"), format!("ignoring"), self.peek(-1).span);
+					} else {
+						self.next();
 					}
 				}
+				
 				StmtST::Expr(expr)
 			},
 		}
@@ -214,29 +259,14 @@ impl<'a> Parser<'a> {
 				kind: ExprSTKind::Float(x),
 				span: token.span.clone(),
 			},
-			_ => self.report_expected_expr(token),
-		}
-	}
+			_ => {
+				self.report_mistake(format!("expected expression"), format!("using `null` instead"), token.span);
 
-	fn report_wrong_token(&mut self, expected: &[&'static TokenKind], actual: &'a Token) {
-		let expected_str = expected.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ");
-		self.errors.push(Error(format!("expected {}, found {}", expected_str, actual.kind), actual.span));
-	}
-
-	fn report_expected_identifier(&mut self, actual: &'a Token) {
-		self.errors.push(Error(format!("expected identifier, found {}", actual.kind), actual.span));
-	}
-
-	fn report_expected_identifier_or(&mut self, expected: &[&'static TokenKind], actual: &'a Token) {
-		let expected_str = expected.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ");
-		self.errors.push(Error(format!("expected identifier, {}, found {}", expected_str, actual.kind), actual.span));
-	}
-
-	fn report_expected_expr(&mut self, actual: &'a Token) -> ExprST {
-		self.errors.push(Error(format!("expected expression, found {}", actual.kind), actual.span));
-		ExprST {
-			kind: ExprSTKind::Error,
-			span: actual.span,
+				ExprST {
+					kind: ExprSTKind::Error,
+					span: token.span,
+				}
+			},
 		}
 	}
 
@@ -244,53 +274,40 @@ impl<'a> Parser<'a> {
 		self.idx >= self.tokens.len() - 1
 	}
 
-	fn expect_identifier(&mut self) -> Option<&'a Token> {
-		let token = self.next();
-		if matches!(token, Token { kind: TokenKind::Identifier(_), .. }) {
-			Some(token)
-		} else {
-			self.report_expected_identifier(token);
-			None
-		}
+	fn report_error(&mut self, msg: String, span: Span) {
+		self.messages.push(Message {
+			kind: MessageKind::Error,
+			span: span,
+			text: msg,
+		});
+
+		self.has_error = true;
 	}
 
-	fn expect_identifier_or(&mut self, kinds: &[&'static TokenKind]) -> Option<&'a Token> {
-		let token = self.next();
-		if matches!(token, Token { kind: TokenKind::Identifier(_), .. }) {
-			Some(token)
-		} else {
-			let token = self.next();
-			for kind in kinds {
-				if token.kind == **kind {
-					return Some(token);
-				}
-			}
+	fn report_mistake(&mut self, err: String, fix: String, span: Span) {
+		self.messages.push(Message {
+			kind: MessageKind::Mistake,
+			span: span,
+			text: format!("{}\u{001b}[93m; {}", err, fix),
+		});
 
-			self.report_expected_identifier_or(kinds, token);
-			None
-		}
+		self.has_mistake = true;
 	}
 
-	fn expect(&mut self, kind: &'static TokenKind) -> Option<&'a Token> {
-		let token = self.next();
-		if token.kind != *kind {
-			self.report_wrong_token(&[ kind ], token);
-			None
-		} else {
-			Some(token)
-		}
+	fn report_warning(&mut self, msg: String, span: Span) {
+		self.messages.push(Message {
+			kind: MessageKind::Warning,
+			span: span,
+			text: msg,
+		});
 	}
-
-	fn expect_one_of(&mut self, kinds: &[&'static TokenKind]) -> Option<&'a Token> {
-		let token = self.next();
-		for kind in kinds {
-			if token.kind == **kind {
-				return Some(token);
-			}
-		}
-
-		self.report_wrong_token(kinds, token);
-		None
+	
+	fn report_note(&mut self, msg: String, span: Span) {
+		self.messages.push(Message {
+			kind: MessageKind::Note,
+			span: span,
+			text: msg,
+		});
 	}
 
 	fn prev(&mut self) -> &'a Token {
