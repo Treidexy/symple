@@ -1,10 +1,11 @@
 i32 funcFunc()  {
 	innerFunc() {
-		funcception() {
+		i32 funcception() {
+			42
 		}
 	}
 
-	6 + 9
+	6 + 9;
 }
 
 i32 anotherFunc() {

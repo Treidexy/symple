@@ -1,5 +1,12 @@
 pub type FileId = usize;
 
+#[derive(Debug)]
+pub struct CompilerResult<Result> {
+	pub result: Result,
+	pub messages: Vec<Message>,
+	pub has_error: bool,
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct Span {
 	pub file_id: FileId,
@@ -87,12 +94,15 @@ impl Message {
 
 		let line_num_str = line.to_string();
 		let line_str = &src[line_start..line_end].trim();
-		let line_leading_space = &src[line_start..line_end-line_str.len()];
+		let mut line_leading_space = &src[line_start..line_end - line_str.len()];
+		if line_leading_space.len() > 3 {
+			line_leading_space = "... ";
+		}
 		let pre_pad = " ".repeat(line_num_str.len());
 		println!("\u{001b}[{}m{}:\u{001b}[0m {}", self.kind.color(), self.kind, self.text);
 		println!("{}\u{001b}[94m-->\u{001b}[0m {}:{}:{} + {}", pre_pad, path, line, col, self.span.end - self.span.start);
 		println!("\u{001b}[94m{} |", pre_pad);
 		println!("{} |\u{001b}[0m {}{}", line_num_str, line_leading_space, line_str);
-		println!("\u{001b}[94m{} | {}{}\u{001b}[31m{}\u{001b}[0m", pre_pad, line_leading_space, " ".repeat(self.span.start - line_start), "^".repeat(self.span.end - self.span.start));
+		println!("\u{001b}[94m{} | {}{}\u{001b}[31m{}\u{001b}[0m", pre_pad, line_leading_space, " ".repeat(self.span.start - line_start - line_leading_space.len()), "^".repeat(std::cmp::min(self.span.end, line_end) - self.span.start));
 	}
 }

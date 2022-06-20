@@ -47,6 +47,7 @@ pub struct FuncST {
 	pub ty: TypeST,
 	pub name: String,
 	pub stmts: Vec<StmtST>,
+	pub eval: Option<ExprST>,
 	pub span: Span,
 }
 
@@ -64,20 +65,12 @@ pub struct Parser<'a> {
 
 	messages: Vec<Message>,
 	has_error: bool,
-	has_mistake: bool,
 
 	// mistake helping
 }
 
-pub struct ParseResult {
-	pub module: ModuleST,
-	pub messages: Vec<Message>,
-	pub has_error: bool,
-	pub has_mistake: bool,
-}
-
 impl<'a> Parser<'a> {
-	pub fn parse(file_id: FileId, tokens: &Vec<Token>) -> ParseResult {
+	pub fn parse(file_id: FileId, tokens: &Vec<Token>) -> CompilerResult<ModuleST> {
 		let mut parser = Parser {
 			file_id,
 			tokens,
@@ -85,7 +78,6 @@ impl<'a> Parser<'a> {
 
 			messages: vec![],
 			has_error: false,
-			has_mistake: false,
 		};
 
 		let mut funcs = vec![]; 
@@ -98,11 +90,10 @@ impl<'a> Parser<'a> {
 			}
 		}
 
-		ParseResult {
-			module: ModuleST { funcs },
+		CompilerResult {
+			result: ModuleST { funcs },
 			messages: parser.messages,
 			has_error: parser.has_error,
-			has_mistake: parser.has_mistake,
 		}
 	}
 
@@ -125,6 +116,8 @@ impl<'a> Parser<'a> {
 	}
 
 	fn parse_func(&mut self) -> Option<FuncST> {
+		let start = self.peek(0).span.start;
+
 		let ty = if matches!(self.peek(1).kind, TokenKind::Identifier(_)) {
 			self.parse_type()
 		} else {
@@ -142,7 +135,6 @@ impl<'a> Parser<'a> {
 			self.next();
 		}
 
-		let name_span = name_token.span;
 		let name = name_token.kind.text().unwrap();
 		
 		if self.peek(0).kind != TokenKind::LParen {
@@ -172,18 +164,34 @@ impl<'a> Parser<'a> {
 		
 		let mut stmts = vec![];
 		while !self.at_eof() && self.peek(0).kind != TokenKind::RBrace {
-			stmts.push(self.parse_stmt());
+			let stmt = self.parse_stmt();
+			if matches!(stmt, StmtST::Error(_)) {
+				self.report_mistake(format!("expected statement"), format!("ignoring"), self.peek(0).span);
+				return None;
+			} else {
+				stmts.push(stmt);
+			}
 		}
+
+		let last = stmts.pop();
+		let eval = if last.is_some() {
+			match last.unwrap() {
+				StmtST::Expr(expr) => Some(expr),
+				_ => None,
+			}
+		} else {
+			None
+		};
 
 		let rbrace_span = self.next().span;
 
 		let span = Span {
 			file_id: self.file_id,
-			start: name_span.start,
+			start,
 			end: rbrace_span.end,
 		};
 		
-		Some(FuncST { ty, name: name.clone(), stmts, span, })
+		Some(FuncST { ty, name: name.clone(), stmts, eval, span, })
 	}
 
 	fn parse_stmt(&mut self) -> StmtST {
@@ -290,8 +298,6 @@ impl<'a> Parser<'a> {
 			span: span,
 			text: format!("{}\u{001b}[93m; {}", err, fix),
 		});
-
-		self.has_mistake = true;
 	}
 
 	fn report_warning(&mut self, msg: String, span: Span) {

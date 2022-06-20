@@ -1,19 +1,29 @@
 use crate::compiler::*;
 use crate::parse::*;
 
-pub type TypeId = usize;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TypeId(pub usize);
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum BuiltinType {
-	Int(u32),
-	UInt(u32),
-	Float(u32),
-}
+pub const NONE_TYPE_ID  : TypeId = TypeId(0);
+pub const I8_TYPE_ID    : TypeId = TypeId(1);
+pub const I16_TYPE_ID   : TypeId = TypeId(2);
+pub const I32_TYPE_ID   : TypeId = TypeId(3);
+pub const I64_TYPE_ID   : TypeId = TypeId(4);
+pub const U8_TYPE_ID    : TypeId = TypeId(5);
+pub const U16_TYPE_ID   : TypeId = TypeId(6);
+pub const U32_TYPE_ID   : TypeId = TypeId(7);
+pub const U64_TYPE_ID   : TypeId = TypeId(8);
+pub const F16_TYPE_ID   : TypeId = TypeId(9);
+pub const F32_TYPE_ID   : TypeId = TypeId(10);
+pub const F64_TYPE_ID   : TypeId = TypeId(11);
+pub const BOOL_TYPE_ID  : TypeId = TypeId(12);
+
+pub const LAST_BUILTIN_TYPE_ID : TypeId = BOOL_TYPE_ID;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Type {
 	None,
-	Builtin(BuiltinType),
+	Builtin,
 }
 
 #[derive(Debug)]
@@ -40,6 +50,7 @@ pub enum BinOp {
 
 #[derive(Debug)]
 pub enum ExprKind {
+	Null,
 	BinOp(BinOp, Box<Expr>, Box<Expr>),
 	Int(i64),
 	Float(f64),
@@ -57,11 +68,13 @@ pub struct Func {
 	pub type_id: TypeId,
 	pub name: String,
 	pub stmts: Vec<Stmt>,
+	pub eval: Expr,
 	pub span: Span,
 }
 
 #[derive(Debug)]
 pub enum Stmt {
+	None,
 	Expr(Expr),
 	Func(Func),
 }
@@ -69,42 +82,66 @@ pub enum Stmt {
 pub struct Checker {
 	module: Module,
 
+	messages: Vec<Message>,
+	has_error: bool,
+
 	// hax for name mangling
 	scope_name: String,
 }
 
 impl Checker {
-	pub fn check(module_st: &ModuleST) -> Module {
+	pub fn check(module_st: &ModuleST) -> CompilerResult<Module> {
 		let mut checker = Checker {
 			module: Module {
-				types: vec![],
+				types: vec![
+					Type::None,
+					Type::Builtin, // i8
+					Type::Builtin, // i16
+					Type::Builtin, // i32
+					Type::Builtin, // i64
+					Type::Builtin, // u8
+					Type::Builtin, // u16
+					Type::Builtin, // u32
+					Type::Builtin, // u64
+					Type::Builtin, // f16
+					Type::Builtin, // f32
+					Type::Builtin, // f64
+					Type::Builtin, // bool
+				],
 				funcs: vec![],
 			},
+
+			messages: vec![],
+			has_error: false,
 
 			scope_name: String::new(),
 		};
 
 		for func_st in &module_st.funcs {
 			let checked = checker.check_func(func_st);
-			checker.module.funcs.push(checked);
+			if checked.is_some() {
+				checker.module.funcs.push(checked.unwrap());
+			}
 		}
 
-		checker.module
+		CompilerResult {
+			result: checker.module,
+			messages: checker.messages,
+			has_error: checker.has_error,
+		}
 	}
 
-	fn check_type(&mut self, ast: &TypeST) -> Type {
+	fn check_type(&mut self, ast: &TypeST) -> TypeId {
 		match ast.kind {
 			TypeSTKind::Name(ref name) => match name.as_str() {
-				"i32" => Type::Builtin(BuiltinType::Int(32)),
+				"i32" => I32_TYPE_ID,
 				_ => todo!(),
 			},
-			TypeSTKind::None | TypeSTKind::Error => {
-				Type::None
-			},
+			TypeSTKind::None | TypeSTKind::Error => NONE_TYPE_ID,
 		}
 	}
 
-	fn check_func(&mut self, ast: &FuncST) -> Func {
+	fn check_func(&mut self, ast: &FuncST) -> Option<Func> {
 		let added_dot = if !self.scope_name.is_empty() {
 			self.scope_name.push('.');
 			1
@@ -114,8 +151,7 @@ impl Checker {
 
 		self.scope_name.push_str(&ast.name);
 
-		let ty = self.check_type(&ast.ty);
-		let type_id = self.module.find_or_add_type(ty);
+		let type_id = self.check_type(&ast.ty);
 
 		// todo: better mangling
 		let mangled_name = self.scope_name.clone();
@@ -128,13 +164,28 @@ impl Checker {
 
 		self.scope_name.truncate(self.scope_name.len() - ast.name.len() - added_dot);
 
+		let eval = if ast.eval.is_some() {
+			self.check_expr(ast.eval.as_ref().unwrap())
+		} else {
+			Expr {
+				kind: ExprKind::Null,
+				type_id: NONE_TYPE_ID,
+				span: Span::new(ast.span.file_id),
+			}
+		};
 
-		Func {
+		if eval.type_id != type_id {
+			self.report_error(format!("expected `{}` because of return type, found `{}`", type_id.to_string(self.module), eval.type_id.to_string(self.module)), eval.span);
+			return None;
+		}
+
+		Some(Func {
 			type_id,
 			name: mangled_name,
 			stmts,
+			eval,
 			span: ast.span,
-		}
+		})
 	}
 
 	fn check_stmt(&mut self, ast: &StmtST) -> Stmt {
@@ -145,7 +196,7 @@ impl Checker {
 			},
 			StmtST::Func(func) => {
 				let checked = self.check_func(func);
-				Stmt::Func(checked)
+				Stmt::None
 			},
 			_ => todo!(),
 		}
@@ -169,8 +220,7 @@ impl Checker {
 			},
 			ExprSTKind::Int(value) => {
 				let span = ast.span;
-				let ty = Type::Builtin(BuiltinType::Int(64));
-				let type_id = self.module.find_or_add_type(ty);
+				let type_id = I64_TYPE_ID;
 
 				Expr {
 					kind: ExprKind::Int(value),
@@ -180,8 +230,7 @@ impl Checker {
 			},
 			ExprSTKind::Float(value) => {
 				let span = ast.span;
-				let ty = Type::Builtin(BuiltinType::Float(64));
-				let type_id = self.module.find_or_add_type(ty);
+				let type_id = F64_TYPE_ID;
 
 				Expr {
 					kind: ExprKind::Float(value),
@@ -193,12 +242,9 @@ impl Checker {
 	}
 
 	fn resolve_bin_op_type(&mut self, _op: BinOpST, left_id: TypeId, right_id: TypeId) -> TypeId {
-		let left = &self.module.types[left_id];
-		let right = &self.module.types[right_id];
-
-		if left.is_float() {
+		if left_id.is_float() {
 			left_id
-		} else if right.is_float() {
+		} else if right_id.is_float() {
 			right_id
 		} else {
 			left_id
@@ -206,9 +252,7 @@ impl Checker {
 	}
 
 	fn bin_op_st_to_bin_op(&self, op: BinOpST, type_id: TypeId) -> BinOp {
-		let ty = &self.module.types[type_id];
-		
-		if ty.is_float() {
+		if type_id.is_float() {
 			match op {
 				BinOpST::Add => BinOp::FAdd,
 				BinOpST::Sub => BinOp::FSub,
@@ -221,10 +265,44 @@ impl Checker {
 				BinOpST::Add => BinOp::Add,
 				BinOpST::Sub => BinOp::Sub,
 				BinOpST::Mul => BinOp::Mul,
-				BinOpST::Div => if ty.is_signed_int() { BinOp::SDiv } else { BinOp::UDiv },
-				BinOpST::Mod => if ty.is_signed_int() { BinOp::SMod } else { BinOp::UMod },
+				BinOpST::Div => if type_id.is_sint() { BinOp::SDiv } else { BinOp::UDiv },
+				BinOpST::Mod => if type_id.is_sint() { BinOp::SMod } else { BinOp::UMod },
 			}
 		}
+	}
+
+	fn report_error(&mut self, msg: String, span: Span) {
+		self.messages.push(Message {
+			kind: MessageKind::Error,
+			span: span,
+			text: msg,
+		});
+
+		self.has_error = true;
+	}
+
+	fn report_mistake(&mut self, err: String, fix: String, span: Span) {
+		self.messages.push(Message {
+			kind: MessageKind::Mistake,
+			span: span,
+			text: format!("{}\u{001b}[93m; {}", err, fix),
+		});
+	}
+
+	fn report_warning(&mut self, msg: String, span: Span) {
+		self.messages.push(Message {
+			kind: MessageKind::Warning,
+			span: span,
+			text: msg,
+		});
+	}
+	
+	fn report_note(&mut self, msg: String, span: Span) {
+		self.messages.push(Message {
+			kind: MessageKind::Note,
+			span: span,
+			text: msg,
+		});
 	}
 }
 
@@ -232,36 +310,51 @@ impl Module {
 	fn find_or_add_type(&mut self, ty: Type) -> TypeId {
 		for (i, t) in self.types.iter().enumerate() {
 			if t == &ty {
-				return i;
+				return TypeId(i);
 			}
 		}
 
-		let type_id = self.types.len();
+		let type_id = TypeId(self.types.len());
 		self.types.push(ty);
 		type_id
 	}
 }
 
-impl Type {
-	pub fn is_signed_int(&self) -> bool {
-		match self {
-			Type::Builtin(BuiltinType::Int(_)) => true,
-			_ => false,
-		}
+impl TypeId {
+	fn is_float(&self) -> bool {
+		self == &F16_TYPE_ID || self == &F32_TYPE_ID || self == &F64_TYPE_ID
 	}
 
-	pub fn is_int(&self) -> bool {
-		match self {
-			Type::Builtin(BuiltinType::Int(_)) => true,
-			Type::Builtin(BuiltinType::UInt(_)) => true,
-			_ => false,
-		}
+	fn is_sint(&self) -> bool {
+		self == &I8_TYPE_ID || self == &I16_TYPE_ID || self == &I32_TYPE_ID || self == &I64_TYPE_ID
 	}
 
-	pub fn is_float(&self) -> bool {
-		match self {
-			Type::Builtin(BuiltinType::Float(_)) => true,
-			_ => false,
+	fn is_uint(&self) -> bool {
+		self == &U8_TYPE_ID || self == &U16_TYPE_ID || self == &U32_TYPE_ID || self == &U64_TYPE_ID
+	}
+
+	fn is_builtin(&self) -> bool {
+		self.0 <= LAST_BUILTIN_TYPE_ID.0
+	}
+
+	fn to_string(&self, module: Module) -> String {
+		let ty = module.types[self.0];
+		match ty {
+			Type::None => "()".to_string(),
+			Type::Builtin => match self {
+				&I8_TYPE_ID => "i8".to_string(),
+				&I16_TYPE_ID => "i16".to_string(),
+				&I32_TYPE_ID => "i32".to_string(),
+				&I64_TYPE_ID => "i64".to_string(),
+				&U8_TYPE_ID => "u8".to_string(),
+				&U16_TYPE_ID => "u16".to_string(),
+				&U32_TYPE_ID => "u32".to_string(),
+				&U64_TYPE_ID => "u64".to_string(),
+				&F16_TYPE_ID => "f16".to_string(),
+				&F32_TYPE_ID => "f32".to_string(),
+				&F64_TYPE_ID => "f64".to_string(),
+				&BOOL_TYPE_ID => "bool".to_string(),
+			},
 		}
 	}
 }

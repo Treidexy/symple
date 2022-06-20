@@ -12,8 +12,6 @@ use compiler::{ FileId, };
 
 use llvm_sys::core::*;
 
-const DEBUG: bool = true;
-
 fn main() {
 	std::env::set_var("RUST_BACKTRACE", "full");
 
@@ -32,18 +30,28 @@ fn main() {
 	for message in &parse_result.messages {
 		message.print(path, &src)
 	}
-	if parse_result.has_error || (!DEBUG && parse_result.has_mistake)  {
+
+	if parse_result.has_error {
 		std::process::exit(1);
 	}
 
-	let module_st = parse_result.module;
+	let module_st = parse_result.result;
 	for func in &module_st.funcs {
 		// println!("{:?}", func);
 	}
 
 	// println!("");
 
-	let module = Checker::check(&module_st);
+	let check_result = Checker::check(&module_st);
+	for message in &check_result.messages {
+		message.print(path, &src)
+	}
+
+	if check_result.has_error {
+		std::process::exit(1);
+	}
+
+	let module = check_result.result;
 	for func in &module.funcs {
 		// println!("{:?}", func);
 	}
