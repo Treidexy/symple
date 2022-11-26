@@ -5,9 +5,9 @@ i32 funcFunc()  {
 		}
 	}
 
-	6 + 9;
+	6 + 9 + anotherFunc()
 }
 
 i32 anotherFunc() {
-	80085 * 6.927;
+	(80085 as f32 * 6.927) as i32
 }
