@@ -1,0 +1,44 @@
+// contract
+
+type Ptr<T: type> {
+	len: usize,
+}
+
+trait<T: type> Ptr<T> {
+	type Idx<ptr: Ptr<T>> = (idx: usize) [
+		idx < ptr.len,
+	]
+
+	sys alloc(count: usize) [
+		count > 0,
+	] -> (ptr: Ptr<T>) [
+		ptr.len == count,
+	]
+
+	fn get(ptr: &Ptr<T>, idx: Idx<ptr>) -> (ele: &T);
+
+	sys free(ptr: Ptr<T>, count: usize) [
+		count == ptr.len,
+	] -> ();
+}
+
+// impl
+
+struct Ptr<T: type> {
+	addr: usize,
+}
+
+impl<T: type> Ptr<T> {
+	sys alloc(count: usize) -> (ptr: Ptr<T>) {
+		ptr.addr = memalloc(count * T.size);
+		ptr.len = count;
+	}
+
+	fn get(ptr: &Ptr<T>, idx: Idx<ptr>) -> (ele: &T) {
+		ele = memget(ptr.addr + idx * T.size);
+	}
+
+	sys free(ptr: Ptr<T>, count: usize) -> () {
+		memfree(ptr.addr, count * T.size);
+	}
+}
